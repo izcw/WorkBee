@@ -13,7 +13,7 @@ const projects = [
 
 export function HomePage({ onNavigate }: { onNavigate: (page: PageId) => void }) {
   return <div className="home-page">
-    <section className="welcome"><Avatar image={aivraAvatar} size={76} /><div><h1>Aivra</h1><p><strong>Alyra</strong> 团队随时在线</p></div></section>
+    <section className="welcome"><Avatar image={aivraAvatar} size={76} /><div><h1>Aivra</h1><p><strong>Aivra</strong> 团队随时在线</p></div></section>
     <Composer />
     <section className="recent"><h2>最近项目</h2><div className="project-grid">
       {projects.map(project => <div className="project-click" key={project.title} onClick={() => onNavigate('chat')} role="button" tabIndex={0}><Card className="project-card">
