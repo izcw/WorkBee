@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aivra.local/protocol/envelope.v1.json",
+  "title": "Aivra protocol envelope v1",
+  "type": "object",
+  "required": ["protocolVersion", "id", "kind", "type", "timestamp", "payload"],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "kind": { "enum": ["request", "response", "event"] },
+    "type": { "type": "string", "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "payload": { "type": "object" },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "message": { "type": "string", "maxLength": 2000 },
+        "retryable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [{
+    "if": { "properties": { "kind": { "const": "response" } } },
+    "then": { "required": ["requestId"] }
+  }],
+  "additionalProperties": false
+}

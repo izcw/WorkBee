@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aivra-agent"
+version = "0.1.0"
+description = "Local-first Aivra desktop agent"
+requires-python = ">=3.11"
+dependencies = [
+  "jsonschema>=4.23,<5",
+  "langchain-core>=0.3,<2",
+  "langchain-openai>=0.3,<2",
+  "langgraph>=0.4,<2"
+]
+
+[project.optional-dependencies]
+dev = ["pyinstaller>=6.11,<7", "pytest>=8.3,<9"]
+
+[project.scripts]
+aivra-agent = "aivra_agent.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aivra_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

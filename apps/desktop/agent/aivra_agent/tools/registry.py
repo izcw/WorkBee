@@ -1,0 +1,185 @@
+from __future__ import annotations
+
+import os
+import platform
+import shutil
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Dict, List
+
+
+class ToolError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class ToolDefinition:
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+    risk: str
+    approval_required: bool
+    handler: Callable[[Dict[str, Any]], str]
+
+
+class ToolRegistry:
+    def __init__(self, workspace: Path) -> None:
+        self.workspace = workspace.resolve(strict=True)
+        self._tools: Dict[str, ToolDefinition] = {}
+        self._register_defaults()
+
+    def _safe_existing_path(self, relative: str) -> Path:
+        if not relative or Path(relative).is_absolute():
+            raise ToolError("Path must be relative to the selected workspace")
+        try:
+            candidate = (self.workspace / relative).resolve(strict=True)
+            candidate.relative_to(self.workspace)
+        except (FileNotFoundError, ValueError) as exc:
+            raise ToolError("Path does not exist inside the selected workspace") from exc
+        return candidate
+
+    def _safe_write_path(self, relative: str) -> Path:
+        if not relative or Path(relative).is_absolute():
+            raise ToolError("Path must be relative to the selected workspace")
+        raw = self.workspace / relative
+        try:
+            parent = raw.parent.resolve(strict=True)
+            parent.relative_to(self.workspace)
+        except (FileNotFoundError, ValueError) as exc:
+            raise ToolError("Parent directory must exist inside the selected workspace") from exc
+        candidate = parent / raw.name
+        if candidate.exists():
+            try:
+                candidate.resolve(strict=True).relative_to(self.workspace)
+            except ValueError as exc:
+                raise ToolError("Symlink target escapes the selected workspace") from exc
+        return candidate
+
+    def _register_defaults(self) -> None:
+        self.register("list_files", "列出工作区中的文件。path 为空时列出根目录。", {
+            "type": "object", "properties": {"path": {"type": "string", "default": "."}}, "additionalProperties": False
+        }, "low", False, self._list_files)
+        self.register("read_file", "读取工作区内 UTF-8 文本文件。", {
+            "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False
+        }, "low", False, self._read_file)
+        self.register("git_status", "查看工作区 Git 状态，不会修改仓库。", {
+            "type": "object", "properties": {}, "additionalProperties": False
+        }, "low", False, self._git_status)
+        self.register("write_file", "创建或覆盖工作区内的 UTF-8 文本文件。此操作需要用户批准。", {
+            "type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+            "required": ["path", "content"], "additionalProperties": False
+        }, "high", True, self._write_file)
+        self.register("run_command", "在系统沙箱中运行单个命令。禁止网络，写入仅限当前工作区；不支持 Shell 管道或重定向。", {
+            "type": "object", "properties": {
+                "command": {"type": "string"},
+                "arguments": {"type": "array", "items": {"type": "string"}, "default": []},
+                "timeout": {"type": "integer", "minimum": 1, "maximum": 120, "default": 30},
+            }, "required": ["command"], "additionalProperties": False,
+        }, "high", True, self._run_command)
+
+    def register(self, name: str, description: str, parameters: Dict[str, Any], risk: str,
+                 approval_required: bool, handler: Callable[[Dict[str, Any]], str]) -> None:
+        self._tools[name] = ToolDefinition(name, description, parameters, risk, approval_required, handler)
+
+    def definitions(self, allow_side_effects: bool) -> List[Dict[str, Any]]:
+        result = []
+        for tool in self._tools.values():
+            if tool.approval_required and not allow_side_effects:
+                continue
+            result.append({
+                "type": "function",
+                "function": {"name": tool.name, "description": tool.description, "parameters": tool.parameters},
+            })
+        return result
+
+    def describe(self, name: str) -> ToolDefinition:
+        if name not in self._tools:
+            raise ToolError(f"Unknown tool: {name}")
+        return self._tools[name]
+
+    def execute(self, name: str, arguments: Dict[str, Any]) -> str:
+        return self.describe(name).handler(arguments)
+
+    def _list_files(self, arguments: Dict[str, Any]) -> str:
+        target = self._safe_existing_path(arguments.get("path") or ".")
+        if not target.is_dir():
+            raise ToolError("Path is not a directory")
+        entries: List[str] = []
+        for path in sorted(target.rglob("*")):
+            try:
+                relative = path.relative_to(self.workspace)
+            except ValueError:
+                continue
+            if any(part in {".git", "node_modules", ".venv", "dist", "release"} for part in relative.parts):
+                continue
+            entries.append(str(relative) + ("/" if path.is_dir() else ""))
+            if len(entries) >= 300:
+                entries.append("… output truncated at 300 entries")
+                break
+        return "\n".join(entries) or "(empty directory)"
+
+    def _read_file(self, arguments: Dict[str, Any]) -> str:
+        target = self._safe_existing_path(str(arguments.get("path", "")))
+        if not target.is_file():
+            raise ToolError("Path is not a file")
+        if target.stat().st_size > 512 * 1024:
+            raise ToolError("File exceeds the 512 KiB read limit")
+        try:
+            return target.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ToolError("Only UTF-8 text files are supported") from exc
+
+    def _write_file(self, arguments: Dict[str, Any]) -> str:
+        content = str(arguments.get("content", ""))
+        if len(content.encode("utf-8")) > 1024 * 1024:
+            raise ToolError("Content exceeds the 1 MiB write limit")
+        target = self._safe_write_path(str(arguments.get("path", "")))
+        target.write_text(content, encoding="utf-8")
+        return f"Wrote {len(content.encode('utf-8'))} bytes to {target.relative_to(self.workspace)}"
+
+    def _git_status(self, _arguments: Dict[str, Any]) -> str:
+        result = subprocess.run(
+            ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "status", "--short"],
+            cwd=str(self.workspace), capture_output=True, text=True, timeout=20, check=False,
+            env={"HOME": str(self.workspace), "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "LANG": "C.UTF-8"},
+        )
+        output = (result.stdout + result.stderr).strip()
+        return output[:65536] or "Working tree clean"
+
+    def _run_command(self, arguments: Dict[str, Any]) -> str:
+        command = str(arguments.get("command", "")).strip()
+        args = arguments.get("arguments", [])
+        timeout = int(arguments.get("timeout", 30))
+        if not command or "/" in command or "\\" in command:
+            raise ToolError("Command must be an executable name without a path")
+        if not isinstance(args, list) or len(args) > 100 or any(not isinstance(item, str) or len(item) > 4096 for item in args):
+            raise ToolError("Command arguments are invalid")
+        executable = shutil.which(command)
+        if not executable:
+            raise ToolError(f"Executable not found: {command}")
+        if platform.system() != "Darwin" or not Path("/usr/bin/sandbox-exec").exists():
+            raise ToolError("A supported OS command sandbox is not available; command execution was refused")
+        profile = """
+(version 1)
+(deny default)
+(import "system.sb")
+(allow process*)
+(allow file-read* (subpath (param "WORKSPACE")))
+(allow file-write* (subpath (param "WORKSPACE")))
+"""
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/sbin:/sbin"),
+            "HOME": str(self.workspace), "TMPDIR": str(self.workspace), "LANG": "C.UTF-8",
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+        }
+        try:
+            result = subprocess.run(
+                ["/usr/bin/sandbox-exec", "-D", f"WORKSPACE={self.workspace}", "-p", profile, executable, *args],
+                cwd=str(self.workspace), capture_output=True, text=True, timeout=max(1, min(timeout, 120)),
+                check=False, env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ToolError("Sandboxed command timed out") from exc
+        output = (result.stdout + result.stderr).strip()[:65536]
+        return f"exit_code={result.returncode}\n{output or '(no output)'}"

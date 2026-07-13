@@ -1,0 +1,43 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('aivraDesktop', {
+  platform: process.platform,
+  isDesktop: true,
+  window: {
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    maximize: () => ipcRenderer.invoke('window:maximize'),
+    close: () => ipcRenderer.invoke('window:close'),
+  },
+  agent: {
+    status: () => ipcRenderer.invoke('agent:status'),
+    selectWorkspace: () => ipcRenderer.invoke('agent:select-workspace'),
+    listThreads: workspaceId => ipcRenderer.invoke('agent:list-threads', workspaceId),
+    workspaceTree: workspaceId => ipcRenderer.invoke('agent:workspace-tree', workspaceId),
+    usageSummary: () => ipcRenderer.invoke('agent:usage-summary'),
+    getThread: threadId => ipcRenderer.invoke('agent:get-thread', threadId),
+    createRun: input => ipcRenderer.invoke('agent:create-run', input),
+    cancelRun: runId => ipcRenderer.invoke('agent:cancel-run', runId),
+    resolveApproval: input => ipcRenderer.invoke('agent:resolve-approval', input),
+    onEvent: callback => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('agent:event', listener);
+      return () => ipcRenderer.removeListener('agent:event', listener);
+    },
+    onStatus: callback => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('agent:status', listener);
+      return () => ipcRenderer.removeListener('agent:status', listener);
+    },
+  },
+  models: {
+    list: () => ipcRenderer.invoke('models:list'),
+    create: input => ipcRenderer.invoke('models:create', input),
+    update: input => ipcRenderer.invoke('models:update', input),
+    delete: modelId => ipcRenderer.invoke('models:delete', modelId),
+    test: input => ipcRenderer.invoke('models:test', input),
+  },
+  roles: {
+    list: () => ipcRenderer.invoke('roles:list'),
+    save: input => ipcRenderer.invoke('roles:save', input),
+  },
+});

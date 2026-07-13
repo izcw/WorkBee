@@ -1,0 +1,50 @@
+{
+  "name": "@aivra/desktop",
+  "description": "Aivra desktop agent workspace",
+  "author": "Aivra",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "desktop:dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "npm run test:desktop && npm run test:protocol && npm run agent:test",
+    "test:desktop": "node --test tests/*.test.cjs",
+    "test:protocol": "npm --prefix ../../packages/protocol test",
+    "agent:setup": "node scripts/setup-agent.mjs",
+    "agent:test": "agent/.venv/bin/python -m pytest agent/tests",
+    "agent:build": "node scripts/build-agent.mjs",
+    "desktop:pack": "npm run build && npm run agent:build && electron-builder --dir",
+    "desktop:dist": "npm run build && npm run agent:build && electron-builder"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@vitejs/plugin-react": "latest",
+    "lucide-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest",
+    "concurrently": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "wait-on": "latest"
+  },
+  "build": {
+    "appId": "com.aivra.desktop",
+    "productName": "Aivra",
+    "electronDist": "node_modules/electron/dist",
+    "icon": "electron/Aivra.png",
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "electron/**/*", "package.json"],
+    "extraResources": [{ "from": "agent/dist/aivra-agent", "to": "agent/aivra-agent" }],
+    "mac": { "icon": "electron/Aivra.png", "category": "public.app-category.productivity", "target": ["dmg", "zip"] },
+    "win": { "icon": "electron/Aivra.png", "target": "nsis" },
+    "linux": { "icon": "electron/Aivra.png", "target": "AppImage" }
+  }
+}

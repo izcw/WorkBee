@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aivra.local/protocol/messages.v1.json",
+  "title": "Aivra message payload catalogue v1",
+  "type": "object",
+  "required": ["type", "payload"],
+  "properties": {
+    "type": {
+      "enum": [
+        "runtime.hello", "runtime.ready", "runtime.health", "runtime.shutdown",
+        "workspace.select", "workspace.selected", "thread.list", "thread.get", "thread.created",
+        "run.create", "run.created", "run.cancel", "run.started", "run.completed", "run.failed", "run.cancelled",
+        "model.delta", "tool.requested", "tool.completed", "approval.required", "approval.resolve", "settings.status"
+      ]
+    },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@aivra/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": { "test": "node --test tests/protocol.test.mjs" }
+}
