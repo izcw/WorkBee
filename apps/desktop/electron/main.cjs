@@ -1,5 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs/promises');
+const { randomUUID } = require('node:crypto');
 const { AgentManager } = require('./agent-manager.cjs');
 const { SecureStore } = require('./secure-store.cjs');
 const { RoleStore } = require('./role-store.cjs');
@@ -9,6 +11,14 @@ const { testOpenAIConnection } = require('./provider-test.cjs');
 const isDev = !app.isPackaged;
 const appIcon = path.join(__dirname, 'Aivra.png');
 let agentManager;
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
+else app.on('second-instance', () => {
+  const window = BrowserWindow.getAllWindows()[0];
+  if (window?.isMinimized()) window.restore();
+  window?.focus();
+});
 
 function sendToRenderers(channel, payload) {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload);
@@ -57,7 +67,7 @@ function createWindow() {
   else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
 }
 
-app.whenReady().then(() => {
+if (hasSingleInstanceLock) app.whenReady().then(() => {
   // macOS ignores BrowserWindow.icon, so set the Dock icon explicitly as well.
   if (process.platform === 'darwin') app.dock.setIcon(appIcon);
 
@@ -73,27 +83,59 @@ app.whenReady().then(() => {
   ipcMain.handle('window:maximize', event => { const win = BrowserWindow.fromWebContents(event.sender); if (win?.isMaximized()) win.unmaximize(); else win?.maximize(); });
   ipcMain.handle('window:close', event => BrowserWindow.fromWebContents(event.sender)?.close());
   ipcMain.handle('agent:status', async () => ({ ...agentManager.getStatus(), keyAvailable: await secureStore.hasApiKey() }));
+  ipcMain.handle('agent:ensure-ready', async () => agentManager.ensureReady());
   ipcMain.handle('agent:select-workspace', async event => {
     const window = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'], title: '选择 Aivra 工作区' });
     if (result.canceled || !result.filePaths[0]) return null;
-    const response = await agentManager.request('workspace.select', { path: result.filePaths[0] });
+    const response = await agentManager.requestReady('workspace.select', { path: result.filePaths[0] });
     return response.payload.workspace;
   });
+  ipcMain.handle('agent:create-project', async () => {
+    const id = randomUUID();
+    const projectPath = path.join(app.getPath('userData'), 'projects', id);
+    await fs.mkdir(projectPath, { recursive: true });
+    const response = await agentManager.requestReady('workspace.select', { path: projectPath, name: `新项目 ${new Date().toLocaleDateString('zh-CN')}` });
+    return response.payload.workspace;
+  });
+  ipcMain.handle('agent:list-workspaces', async () => {
+    const response = await agentManager.requestReady('workspace.list', {});
+    return response.payload.workspaces;
+  });
+  ipcMain.handle('agent:delete-workspace', async (_event, workspaceId) => {
+    const response = await agentManager.requestReady('workspace.delete', { workspaceId: requireString(workspaceId, 'workspaceId', 128) });
+    return response.payload;
+  });
+  ipcMain.handle('agent:rename-workspace', async (_event, input) => {
+    if (!input || typeof input !== 'object') throw new Error('项目标题参数无效');
+    const response = await agentManager.requestReady('workspace.rename', {
+      workspaceId: requireString(input.workspaceId, 'workspaceId', 128),
+      name: requireString(input.name, 'name', 80).trim(),
+    });
+    return response.payload;
+  });
   ipcMain.handle('agent:list-threads', async (_event, workspaceId) => {
-    const response = await agentManager.request('thread.list', workspaceId ? { workspaceId: requireString(workspaceId, 'workspaceId', 128) } : {});
+    const response = await agentManager.requestReady('thread.list', workspaceId ? { workspaceId: requireString(workspaceId, 'workspaceId', 128) } : {});
     return response.payload.threads;
   });
+  ipcMain.handle('agent:create-thread', async (_event, workspaceId) => {
+    const response = await agentManager.requestReady('thread.create', { workspaceId: requireString(workspaceId, 'workspaceId', 128) });
+    return response.payload;
+  });
+  ipcMain.handle('agent:delete-thread', async (_event, threadId) => {
+    const response = await agentManager.requestReady('thread.delete', { threadId: requireString(threadId, 'threadId', 128) });
+    return response.payload;
+  });
   ipcMain.handle('agent:workspace-tree', async (_event, workspaceId) => {
-    const response = await agentManager.request('workspace.tree', { workspaceId: requireString(workspaceId, 'workspaceId', 128) });
+    const response = await agentManager.requestReady('workspace.tree', { workspaceId: requireString(workspaceId, 'workspaceId', 128) });
     return response.payload.tree;
   });
   ipcMain.handle('agent:usage-summary', async () => {
-    const response = await agentManager.request('usage.summary', {});
+    const response = await agentManager.requestReady('usage.summary', {});
     return response.payload.usage;
   });
   ipcMain.handle('agent:get-thread', async (_event, threadId) => {
-    const response = await agentManager.request('thread.get', { threadId: requireString(threadId, 'threadId', 128) });
+    const response = await agentManager.requestReady('thread.get', { threadId: requireString(threadId, 'threadId', 128) });
     return response.payload.thread;
   });
   ipcMain.handle('agent:create-run', async (_event, input) => {
@@ -108,16 +150,16 @@ app.whenReady().then(() => {
       documents: Array.isArray(input.documents) ? input.documents.slice(0, 100).map((item, index) => requireString(item, `documents[${index}]`, 1024)) : [],
     };
     if (input.threadId) payload.threadId = requireString(input.threadId, 'threadId', 128);
-    const response = await agentManager.request('run.create', payload);
+    const response = await agentManager.requestReady('run.create', payload);
     return response.payload;
   });
   ipcMain.handle('agent:cancel-run', async (_event, runId) => {
-    const response = await agentManager.request('run.cancel', { runId: requireString(runId, 'runId', 128) });
+    const response = await agentManager.requestReady('run.cancel', { runId: requireString(runId, 'runId', 128) });
     return response.payload;
   });
   ipcMain.handle('agent:resolve-approval', async (_event, input) => {
     if (!input || typeof input.approved !== 'boolean') throw new Error('审批参数无效');
-    const response = await agentManager.request('approval.resolve', {
+    const response = await agentManager.requestReady('approval.resolve', {
       approvalId: requireString(input.approvalId, 'approvalId', 128), approved: input.approved,
     });
     return response.payload;
@@ -158,7 +200,7 @@ app.whenReady().then(() => {
     return saved;
   });
   createWindow();
-  agentManager.start();
+  agentManager.start().catch(error => console.error(`[agent] ${error.message}`));
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());
 });
 

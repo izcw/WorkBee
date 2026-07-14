@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Box, ChevronDown, ChevronRight, FileText, LogOut, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, PlusSquare, Settings, ToolCase, Users } from 'lucide-react';
+import { Box, ChevronDown, ChevronRight, FileText, Folder, LogOut, MessageSquare, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Pencil, Plus, PlusSquare, Settings, ToolCase, Trash2, Users } from 'lucide-react';
 import type { PageId } from '../types';
 import { Avatar, SearchInput } from './ui';
 import { SettingsDialog } from './SettingsDialog';
+import { ModalDialog } from './ModalDialog';
 import { useAgent } from '../agent/AgentContext';
 
 const navigation = [
@@ -27,23 +28,107 @@ function ProfileMenu({ close, openSettings }: { close: () => void; openSettings:
   </div>;
 }
 
+function RenameProjectDialog({ project, close }: { project: Workspace; close: () => void }) {
+  const { renameProject } = useAgent();
+  const [name, setName] = useState(project.name);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const save = async () => {
+    const nextName = name.trim();
+    if (!nextName) { setError('项目标题不能为空'); return; }
+    if (nextName === project.name) { close(); return; }
+    setSaving(true); setError('');
+    try { await renameProject(project.id, nextName); close(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setSaving(false); }
+  };
+  return <ModalDialog title="编辑项目标题" description="修改后会同步显示在项目列表和最近项目中。" close={close} className="project-rename-dialog">
+    <form onSubmit={event => { event.preventDefault(); save(); }}>
+      <label>项目标题<input autoFocus maxLength={80} value={name} onChange={event => setName(event.target.value)} onFocus={event => event.currentTarget.select()}/></label>
+      {error && <p className="project-rename-error">{error}</p>}
+      <footer><button type="button" onClick={close} disabled={saving}>取消</button><button className="primary" type="submit" disabled={saving || !name.trim()}>{saving ? '保存中…' : '保存'}</button></footer>
+    </form>
+  </ModalDialog>;
+}
+
 export function Sidebar({ page, onNavigate, openSettings }: { page: PageId; onNavigate: (page: PageId) => void; openSettings: () => void }) {
-  const { workspace, threads, threadId, openThread, startNewConversation } = useAgent();
+  const { workspace, projects, projectThreads, threadId, startNewConversation, openProject, newProjectThread, deleteProject, deleteThread, openThread } = useAgent();
   const [profileOpen, setProfileOpen] = useState(false);
-  const [resumeOpen, setResumeOpen] = useState(true);
+  const [openTreeMenu, setOpenTreeMenu] = useState('');
+  const [editingProject, setEditingProject] = useState<Workspace | null>(null);
+  const [expandedProjects, setExpandedProjects] = useState<string[]>(() => {
+    try { const saved = JSON.parse(localStorage.getItem('aivra.expandedProjects.v1') || '[]'); return Array.isArray(saved) ? saved : []; }
+    catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem('aivra.expandedProjects.v1', JSON.stringify(expandedProjects)); }, [expandedProjects]);
+  useEffect(() => {
+    const dismiss = () => setOpenTreeMenu('');
+    addEventListener('mousedown', dismiss);
+    return () => removeEventListener('mousedown', dismiss);
+  }, []);
+  const toggleProject = (id: string) => setExpandedProjects(items => items.includes(id) ? items.filter(item => item !== id) : [...items, id]);
   return <aside className="sidebar">
     <div className="brand-row"><button className="brand" onClick={() => onNavigate('home')}>Aivra</button></div>
     <SearchInput className="sidebar-search"/>
     <nav className="main-nav">
-      <button className={`side-new ${page === 'home' ? 'active' : ''}`} onClick={() => { startNewConversation(); onNavigate('home'); }}><PlusSquare size={17}/><span>新建对话</span></button>
+      <button className={`${page === 'home' ? 'active' : ''}`} onClick={() => { startNewConversation('', true); onNavigate('home'); }}><PlusSquare size={17}/><span>新建项目</span></button>
       {navigation.map(item => <button title={item.label} key={item.id} className={page === item.id ? 'active' : ''} onClick={() => onNavigate(item.id)}><item.icon size={17}/><span>{item.label}</span></button>)}
     </nav>
-    <div className="chat-nav"><span>Agent 工作区</span><div className="conversation-group"><button className={`conversation-parent ${page === 'chat' ? 'active' : ''}`} onClick={() => { setResumeOpen(value => !value); onNavigate('chat'); }}><span>{workspace?.name || '本地工作区'}</span>{resumeOpen ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}</button>{resumeOpen && <div className="conversation-history">{threads.length ? threads.map(thread => <button className={thread.id === threadId ? 'active' : ''} title={thread.title} key={thread.id} onClick={() => { openThread(thread.id).catch(() => undefined); onNavigate('chat'); }}>{thread.title}</button>) : <button onClick={() => onNavigate('chat')}>打开 Agent 工作台</button>}</div>}</div></div>
+    <div className="chat-nav">
+      <div className="project-tree-heading"><span>项目</span><small>{projects.length}</small></div>
+      {projects.length === 0 && <p className="project-tree-empty">尚未创建项目</p>}
+      {projects.map(project => {
+        const expanded = expandedProjects.includes(project.id);
+        const active = workspace?.id === project.id;
+        const conversations = projectThreads.filter(thread => thread.workspace_id === project.id);
+        return <div className="conversation-group" key={project.id}>
+          <div className={`conversation-parent-row ${active && page === 'chat' ? 'active' : ''}`}>
+            <button className="conversation-parent" title={project.path} aria-expanded={expanded} onClick={() => toggleProject(project.id)}>
+              {expanded ? <ChevronDown className="project-chevron" size={13}/> : <ChevronRight className="project-chevron" size={13}/>}<span className="project-folder-icon"><Folder size={15}/></span><span>{project.name}</span>
+            </button>
+            <div className="tree-action" onMouseDown={event => event.stopPropagation()}>
+              <button className="project-menu-button" title="项目操作" aria-label={`${project.name} 项目操作`} onClick={() => setOpenTreeMenu(value => value === `project:${project.id}` ? '' : `project:${project.id}`)}><MoreHorizontal size={15}/></button>
+              {openTreeMenu === `project:${project.id}` && <div className="tree-action-menu" role="menu"><button role="menuitem" onClick={() => {
+                setOpenTreeMenu('');
+                setEditingProject(project);
+              }}><Pencil size={13}/>编辑</button><button className="danger" role="menuitem" onClick={() => {
+                setOpenTreeMenu('');
+                if (!confirm(`确定从 Aivra 中删除项目“${project.name}”及其全部对话历史吗？\n\n磁盘中的项目文件夹不会被删除。`)) return;
+                deleteProject(project.id).then(() => setExpandedProjects(items => items.filter(item => item !== project.id))).catch(reason => alert(reason instanceof Error ? reason.message : String(reason)));
+              }}><Trash2 size={13}/>删除项目</button></div>}
+            </div>
+            <button className="project-add-thread" title="在当前项目中新建对话" aria-label={`在 ${project.name} 中新建对话`} onClick={() => {
+              setExpandedProjects(items => items.includes(project.id) ? items : [...items, project.id]);
+              newProjectThread(project.id).then(() => onNavigate('chat')).catch(() => undefined);
+            }}><Plus size={15}/></button>
+          </div>
+          {expanded && <div className="conversation-history">
+            {conversations.length === 0 && <span className="empty-thread">暂无对话</span>}
+            {conversations.map(thread => <div className="thread-tree-row" key={thread.id}>
+              <button className={`thread-open-button ${thread.id === threadId ? 'active' : ''}`} title={thread.title} onClick={() => {
+                const activate = active ? Promise.resolve() : openProject(project.id);
+                activate.then(() => openThread(thread.id)).then(() => onNavigate('chat')).catch(() => undefined);
+              }}><MessageSquare size={13}/><span>{thread.title}</span></button>
+              <div className="tree-action thread-action" onMouseDown={event => event.stopPropagation()}>
+                <button className="thread-menu-button" title="对话操作" aria-label={`${thread.title} 对话操作`} onClick={() => setOpenTreeMenu(value => value === `thread:${thread.id}` ? '' : `thread:${thread.id}`)}><MoreHorizontal size={14}/></button>
+                {openTreeMenu === `thread:${thread.id}` && <div className="tree-action-menu" role="menu"><button className="danger" role="menuitem" onClick={() => {
+                  setOpenTreeMenu('');
+                  if (!confirm(`确定删除对话“${thread.title}”吗？此操作无法撤销。`)) return;
+                  deleteThread(thread.id).catch(reason => alert(reason instanceof Error ? reason.message : String(reason)));
+                }}><Trash2 size={13}/>删除对话</button></div>}
+              </div>
+            </div>)}
+          </div>}
+        </div>;
+      })}
+    </div>
+    {editingProject && <RenameProjectDialog project={editingProject} close={() => setEditingProject(null)}/>}
     <div className="profile-wrap"><button className="profile" onClick={() => setProfileOpen(value => !value)}><Avatar kind="yellow" size={36}/><strong>Yoko</strong><ChevronRight size={15}/></button>{profileOpen && <ProfileMenu close={() => setProfileOpen(false)} openSettings={openSettings}/>}</div>
   </aside>;
 }
 
 export function AppLayout({ page, onNavigate, children, right }: { page: PageId; onNavigate: (page: PageId) => void; children: React.ReactNode; right?: React.ReactNode }) {
+  const { workspace } = useAgent();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [marketTab, setMarketTab] = useState(page === 'plugins' ? '插件市场' : '技能市场');
@@ -52,16 +137,21 @@ export function AppLayout({ page, onNavigate, children, right }: { page: PageId;
     if (page === 'skills') setMarketTab('技能市场');
     if (page === 'plugins') setMarketTab('插件市场');
   }, [page]);
+  useEffect(() => {
+    const openRightPanel = () => setRightCollapsed(false);
+    addEventListener('aivra:open-right-panel', openRightPanel);
+    return () => removeEventListener('aivra:open-right-panel', openRightPanel);
+  }, []);
   return <div className={`app-shell ${right ? 'has-right' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${rightCollapsed ? 'right-collapsed' : ''}`}>
     <header className="drag-region">
       <button className="drag-control drag-left" onClick={() => setSidebarCollapsed(value => !value)} aria-label={sidebarCollapsed ? '展开左侧栏' : '隐藏左侧栏'}>{sidebarCollapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}</button>
-      {page === 'chat' && <strong>Aivra Agent</strong>}
+      {page === 'chat' && <strong>{workspace?.name || ''}</strong>}
       {(page === 'skills' || page === 'plugins') && <div className="drag-tabs">{[page === 'skills' ? '技能市场' : '插件市场','我的'].map(item => <button key={item} className={marketTab === item ? 'active' : ''} onClick={() => setMarketTab(item)}>{item}</button>)}</div>}
       {right && <button className="drag-control drag-right" onClick={() => setRightCollapsed(value => !value)} aria-label={rightCollapsed ? '展开右侧栏' : '隐藏右侧栏'}>{rightCollapsed ? <PanelRightOpen size={17}/> : <PanelRightClose size={17}/>}</button>}
     </header>
     {!sidebarCollapsed && <Sidebar page={page} onNavigate={onNavigate} openSettings={() => setSettingsOpen(true)}/>}
     <main className="workspace">{children}</main>
-    {right && !rightCollapsed && <aside className="right-panel">{right}</aside>}
+    {right && !rightCollapsed && <aside className={`right-panel ${page === 'chat' ? 'chat-right-panel' : ''}`}>{right}</aside>}
     {settingsOpen && <SettingsDialog close={() => setSettingsOpen(false)}/>}
   </div>;
 }

@@ -1,49 +1,65 @@
-import { Check, LoaderCircle, Pencil, Save } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Check, LoaderCircle, Pencil, Plus, Save, Upload, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useAgent } from '../agent/AgentContext';
 import { AddCard, Avatar, Card, StatusDot } from '../components/ui';
-import aivraAvatar from '../assets/images/Team/Aivra.png';
-import avaAvatar from '../assets/images/Team/Ava.png';
-import emmaAvatar from '../assets/images/Team/Emma.png';
+import { ModalDialog } from '../components/ModalDialog';
 import { FORMAT_SKILL_BY_TYPE, KNOWLEDGE_DOCUMENTS, SKILL_CATALOG } from '../data/catalog';
-
-const roleImages: Record<string, string> = { aivra: aivraAvatar, ava: avaAvatar, emma: emmaAvatar };
+import { DEFAULT_ROLE_AVATARS, roleAvatar, roleAvatarValue } from '../data/roleAvatars';
 
 function TeamSidebar() {
   const { selectedTeamRoleId, roles, models, saveRole } = useAgent();
-  const role = roles.find(item => item.id === selectedTeamRoleId) || roles[0];
+  const creating = selectedTeamRoleId === '__new__';
+  const role = creating ? undefined : roles.find(item => item.id === selectedTeamRoleId) || roles[0];
   const [editing, setEditing] = useState(false);
+  const [name, setName] = useState('');
+  const [roleTitle, setRoleTitle] = useState('');
+  const [avatar, setAvatar] = useState('default:1');
   const [modelId, setModelId] = useState('');
   const [description, setDescription] = useState('');
   const [skills, setSkills] = useState<string[]>([]);
   const [knowledge, setKnowledge] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [referencePicker, setReferencePicker] = useState<'skills' | 'knowledge' | null>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (!role) return;
-    setEditing(false); setModelId(role.modelId); setDescription(role.description || ''); setSkills(role.skills || []); setKnowledge(role.knowledge || []); setError('');
-  }, [role?.id]);
-  if (!role) return <div className="team-detail"><p>请选择角色。</p></div>;
+    setEditing(creating);
+    setName(role?.name || ''); setRoleTitle(role?.role || ''); setAvatar(roleAvatarValue(role)); setModelId(role?.modelId || models[0]?.id || '');
+    setDescription(role?.description || ''); setSkills(role?.skills || []); setKnowledge(role?.knowledge || []); setError(''); setReferencePicker(null);
+  }, [creating, role?.id, models]);
   const save = async () => {
     setSaving(true); setError('');
     const automaticSkills = knowledge.flatMap(reference => { const document = KNOWLEDGE_DOCUMENTS.find(item => item.id === reference || item.name === reference); return document ? [FORMAT_SKILL_BY_TYPE[document.type]] : []; });
-    try { await saveRole({ id: role.id, modelId, description, skills: Array.from(new Set([...skills, ...automaticSkills])), knowledge }); setEditing(false); }
+    try { await saveRole({ id: role?.id, name, role: roleTitle, avatar, modelId, description, skills: Array.from(new Set([...skills, ...automaticSkills])), knowledge }); setEditing(false); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
+  const uploadAvatar = (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setError('请选择图片文件'); return; }
+    if (file.size > 2_000_000) { setError('头像图片不能超过 2 MB'); return; }
+    const reader = new FileReader();
+    reader.onload = () => setAvatar(String(reader.result || ''));
+    reader.onerror = () => setError('头像读取失败');
+    reader.readAsDataURL(file);
+  };
   return <div className="team-detail">
-    <header><Avatar image={roleImages[role.id] || aivraAvatar} size={72}/><h2>{role.name}</h2><p>{role.role}</p><StatusDot label={role.keyAvailable ? '模型已就绪' : '模型待配置'}/></header>
+    <header><Avatar image={roleAvatar({ id: role?.id || '', avatar })} size={72}/><h2>{creating ? '添加智能体' : role?.name}</h2><p>{creating ? '配置团队中的新角色' : role?.role}</p><StatusDot label={(role?.keyAvailable || models.find(item => item.id === modelId)?.keyAvailable) ? '模型已就绪' : '模型待配置'}/></header>
     <div className="team-detail-actions">{editing ? <button className="primary" disabled={saving} onClick={save}>{saving ? <LoaderCircle size={14}/> : <Save size={14}/>}保存</button> : <button onClick={() => setEditing(true)}><Pencil size={14}/>编辑</button>}</div>
-    <section><h3>角色描述</h3>{editing ? <textarea value={description} onChange={event => setDescription(event.target.value)}/> : <p>{role.description || '暂无描述'}</p>}</section>
-    <section><h3>模型</h3>{editing ? <select value={modelId} onChange={event => setModelId(event.target.value)}>{models.map(item => <option key={item.id} value={item.id}>{item.name} · {item.model}</option>)}</select> : <div className="role-model-summary"><span>{role.modelName}</span><small>{role.model}</small></div>}</section>
-    <section><h3>技能引用</h3>{editing ? <div className="role-reference-list">{SKILL_CATALOG.filter(item => !item.automatic).map(item => <label key={item.id}><input type="checkbox" checked={skills.includes(item.title)} onChange={() => setSkills(values => values.includes(item.title) ? values.filter(value => value !== item.title) : [...values, item.title])}/><img src={item.icon} alt=""/><span><strong>{item.title}</strong><small>{item.desc}</small></span></label>)}</div> : <div className="detail-tags">{role.skills.length ? role.skills.map(item => <span key={item}><Check size={11}/>{item}</span>) : <p>暂无技能</p>}</div>}</section>
-    <section><h3>知识库引用</h3>{editing ? <div className="role-reference-list">{KNOWLEDGE_DOCUMENTS.map(item => <label key={item.id}><input type="checkbox" checked={knowledge.includes(item.id) || knowledge.includes(item.name)} onChange={() => setKnowledge(values => values.includes(item.id) ? values.filter(value => value !== item.id) : [...values.filter(value => value !== item.name), item.id])}/><img src={item.icon} alt=""/><span><strong>{item.name}</strong><small>{item.type.toUpperCase()} · 自动增加 {FORMAT_SKILL_BY_TYPE[item.type]}</small></span></label>)}</div> : <div className="knowledge-list">{role.knowledge.length ? role.knowledge.map(reference => { const item = KNOWLEDGE_DOCUMENTS.find(document => document.id === reference || document.name === reference); return <span key={reference}>{item?.name || reference}</span>; }) : <p>暂无引用</p>}</div>}</section>
+    {editing && <section className="role-identity-fields"><h3>基本信息</h3><input value={name} onChange={event => setName(event.target.value)} placeholder="角色名称"/><input value={roleTitle} onChange={event => setRoleTitle(event.target.value)} placeholder="角色职责，如：前端开发"/></section>}
+    {editing && <section><h3>头像</h3><div className="avatar-picker">{DEFAULT_ROLE_AVATARS.map((image, index) => { const value = `default:${index + 1}`; return <button key={value} className={avatar === value ? 'active' : ''} onClick={() => setAvatar(value)}><img src={image} alt="默认头像"/></button>; })}<button className="avatar-upload" onClick={() => uploadRef.current?.click()}><Upload size={16}/><span>上传</span></button></div><input ref={uploadRef} className="hidden-file" type="file" accept="image/*" onChange={event => uploadAvatar(event.target.files?.[0])}/></section>}
+    <section><h3>角色描述</h3>{editing ? <textarea value={description} onChange={event => setDescription(event.target.value)}/> : <p>{role?.description || '暂无描述'}</p>}</section>
+    <section><h3>模型</h3>{editing ? <select value={modelId} onChange={event => setModelId(event.target.value)}>{models.map(item => <option key={item.id} value={item.id}>{item.name} · {item.model}</option>)}</select> : <div className="role-model-summary"><span>{role?.modelName}</span><small>{role?.model}</small></div>}</section>
+    <section><div className="reference-section-heading"><h3>技能引用</h3>{editing && <button onClick={() => setReferencePicker('skills')}><Plus size={13}/>选择技能</button>}</div><div className="detail-tags editable-tags">{skills.length ? skills.map(item => <span key={item}><Check size={11}/>{item}{editing && <button aria-label={`移除 ${item}`} onClick={() => setSkills(values => values.filter(value => value !== item))}><X size={11}/></button>}</span>) : <p>暂无技能</p>}</div></section>
+    <section><div className="reference-section-heading"><h3>知识库引用</h3>{editing && <button onClick={() => setReferencePicker('knowledge')}><Plus size={13}/>选择文档</button>}</div><div className="knowledge-list editable-tags">{knowledge.length ? knowledge.map(reference => { const item = KNOWLEDGE_DOCUMENTS.find(document => document.id === reference || document.name === reference); return <span key={reference}>{item?.name || reference}{editing && <button aria-label={`移除 ${item?.name || reference}`} onClick={() => setKnowledge(values => values.filter(value => value !== reference))}><X size={11}/></button>}</span>; }) : <p>暂无引用</p>}</div></section>
+    {referencePicker && <ModalDialog title={referencePicker === 'skills' ? '选择技能' : '选择知识库文档'} ariaLabel={referencePicker === 'skills' ? '选择技能' : '选择文档'} description="勾选需要提供给该角色的引用。" close={() => setReferencePicker(null)} className="reference-picker-dialog"><div className="role-reference-list">{referencePicker === 'skills' ? SKILL_CATALOG.map(item => <label key={item.id}><input type="checkbox" checked={skills.includes(item.title)} onChange={() => setSkills(values => values.includes(item.title) ? values.filter(value => value !== item.title) : [...values, item.title])}/><img src={item.icon} alt=""/><span><strong>{item.title}</strong><small>{item.desc}</small></span></label>) : KNOWLEDGE_DOCUMENTS.map(item => <label key={item.id}><input type="checkbox" checked={knowledge.includes(item.id) || knowledge.includes(item.name)} onChange={() => setKnowledge(values => values.includes(item.id) ? values.filter(value => value !== item.id) : [...values.filter(value => value !== item.name), item.id])}/><img src={item.icon} alt=""/><span><strong>{item.name}</strong><small>{item.type.toUpperCase()} · 自动增加 {FORMAT_SKILL_BY_TYPE[item.type]}</small></span></label>)}</div><footer><span>已选择 {referencePicker === 'skills' ? skills.length : knowledge.length} 项</span><button onClick={() => setReferencePicker(null)}>完成</button></footer></ModalDialog>}
     {error && <p className="role-config-error">{error}</p>}
   </div>;
 }
 
 export function TeamPage() {
   const { roles, selectedTeamRoleId, setSelectedTeamRoleId } = useAgent();
-  return <div className="team-page"><div className="team-grid">{roles.map(role => <Card className={`agent-card ${selectedTeamRoleId === role.id ? 'selected' : ''}`} key={role.id}><button className="agent-card-button" onClick={() => setSelectedTeamRoleId(role.id)}><div className="agent-head"><Avatar image={roleImages[role.id] || aivraAvatar} size={70}/><div><strong>{role.name}</strong><span>{role.role}</span><StatusDot label={role.keyAvailable ? '已配置' : '待配置'}/></div></div><hr/><h4>简介</h4><p className="two-line">{role.description}</p><h4>模型</h4><div className="role-model-summary"><span>{role.modelName}</span><small>{role.model}</small></div></button></Card>)}<AddCard label="添加智能体"/></div></div>;
+  const select = (id: string) => { setSelectedTeamRoleId(id); window.dispatchEvent(new Event('aivra:open-right-panel')); };
+  return <div className="team-page"><div className="team-grid">{roles.map(role => <Card className={`agent-card ${selectedTeamRoleId === role.id ? 'selected' : ''}`} key={role.id}><button className="agent-card-button" onClick={() => select(role.id)}><div className="agent-head"><Avatar image={roleAvatar(role)} size={70}/><div><strong>{role.name}</strong><span>{role.role}</span><StatusDot label={role.keyAvailable ? '已配置' : '待配置'}/></div></div><hr/><h4>简介</h4><p className="two-line">{role.description}</p><h4>模型</h4><div className="role-model-summary"><span>{role.modelName}</span><small>{role.model}</small></div></button></Card>)}<div onClick={() => select('__new__')}><AddCard label="添加智能体"/></div></div></div>;
 }
 TeamPage.Sidebar = TeamSidebar;

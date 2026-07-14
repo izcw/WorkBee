@@ -1,12 +1,16 @@
 const { EventEmitter } = require('node:events');
-const { spawn } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const readline = require('node:readline');
 const crypto = require('node:crypto');
+const { promisify } = require('node:util');
 
 const PROTOCOL_VERSION = 1;
 const REQUEST_TIMEOUT_MS = 30_000;
+const STARTUP_TIMEOUT_MS = 15_000;
+const HEALTH_TIMEOUT_MS = 3_000;
+const execFileAsync = promisify(execFile);
 
 function now() { return new Date().toISOString(); }
 function id() { return crypto.randomUUID(); }
@@ -21,10 +25,18 @@ class AgentManager extends EventEmitter {
     this.stopping = false;
     this.pending = new Map();
     this.restartTimes = [];
+    this.startPromise = null;
+    this.restartPromise = null;
+    this.lastMessage = undefined;
+    this.pidFile = path.join(this.app.getPath('userData'), 'aivra-agent.pid.json');
   }
 
   getStatus() {
-    return { status: this.ready ? 'ready' : this.child ? 'starting' : 'offline', ready: this.ready };
+    return {
+      status: this.ready ? 'ready' : this.child ? 'starting' : this.lastMessage ? 'error' : 'offline',
+      ready: this.ready,
+      ...(this.lastMessage ? { message: this.lastMessage } : {}),
+    };
   }
 
   _resolveCommand() {
@@ -43,8 +55,19 @@ class AgentManager extends EventEmitter {
   }
 
   async start() {
-    if (this.child) return;
+    if (this.ready) return this.getStatus();
+    if (this.startPromise) return this.startPromise;
+    const starting = this._start();
+    this.startPromise = starting;
+    try { return await starting; }
+    finally { if (this.startPromise === starting) this.startPromise = null; }
+  }
+
+  async _start() {
+    if (this.child) await this._terminateChild(this.child);
     this.stopping = false;
+    this.lastMessage = undefined;
+    await this._cleanupStaleProcess();
     const launch = this._resolveCommand();
     const providers = await this.getProviderConfigs();
     const env = {
@@ -58,21 +81,53 @@ class AgentManager extends EventEmitter {
       cwd: launch.cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
     });
     this.child = child;
+    await this._rememberChild(child.pid, launch);
     const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
     lines.on('line', line => this._receive(line));
     child.stderr.on('data', chunk => {
       const message = chunk.toString('utf8').trim();
       if (message) this.emit('diagnostic', message.replace(/sk-[A-Za-z0-9_-]+/g, '[REDACTED]'));
     });
-    child.on('error', error => this.emit('diagnostic', `Agent launch failed: ${error.message}`));
+    let rejectLaunch;
+    const launchFailed = new Promise((_, reject) => { rejectLaunch = reject; });
+    child.on('error', error => {
+      this.emit('diagnostic', `Agent launch failed: ${error.message}`);
+      rejectLaunch(error);
+    });
     child.on('exit', (code, signal) => this._onExit(child, code, signal));
     try {
-      const ready = await this.request('runtime.hello', { clientVersion: this.app.getVersion(), protocolVersion: 1 });
+      const ready = await Promise.race([
+        this.request('runtime.hello', { clientVersion: this.app.getVersion(), protocolVersion: 1 }, STARTUP_TIMEOUT_MS),
+        launchFailed,
+      ]);
+      if (this.child !== child) throw new Error('Agent 启动期间意外退出');
       this.ready = true;
+      this.lastMessage = undefined;
       this.emit('status', { status: 'ready', ready: true, ...ready.payload });
+      return this.getStatus();
     } catch (error) {
-      this.emit('status', { status: 'error', ready: false, message: error.message });
+      const message = `Agent 启动失败：${error.message}`;
+      this.lastMessage = message;
+      this.emit('status', { status: 'error', ready: false, message });
+      if (this.child === child) await this._terminateChild(child);
+      throw new Error(message);
     }
+  }
+
+  async ensureReady() {
+    if (!this.ready) return this.start();
+    try {
+      await this.request('runtime.health', {}, HEALTH_TIMEOUT_MS);
+      return this.getStatus();
+    } catch (error) {
+      this.emit('diagnostic', `Agent health check failed: ${error.message}`);
+      return this.restart();
+    }
+  }
+
+  async requestReady(type, payload = {}) {
+    await this.ensureReady();
+    return this.request(type, payload);
   }
 
   _receive(line) {
@@ -95,7 +150,7 @@ class AgentManager extends EventEmitter {
     if (message.kind === 'event') this.emit('event', message);
   }
 
-  request(type, payload = {}) {
+  request(type, payload = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
     if (!this.child?.stdin?.writable) return Promise.reject(new Error('Agent 尚未启动'));
     const requestId = id();
     const message = { protocolVersion: 1, id: requestId, kind: 'request', type, timestamp: now(), payload };
@@ -103,7 +158,7 @@ class AgentManager extends EventEmitter {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
         reject(new Error(`Agent 请求超时：${type}`));
-      }, REQUEST_TIMEOUT_MS);
+      }, timeoutMs);
       this.pending.set(requestId, { resolve, reject, timer });
       this.child.stdin.write(`${JSON.stringify(message)}\n`, error => {
         if (error) {
@@ -116,8 +171,14 @@ class AgentManager extends EventEmitter {
   }
 
   async restart() {
-    await this.stop();
-    await this.start();
+    if (this.restartPromise) return this.restartPromise;
+    const restarting = (async () => {
+      await this.stop();
+      return this.start();
+    })();
+    this.restartPromise = restarting;
+    try { return await restarting; }
+    finally { if (this.restartPromise === restarting) this.restartPromise = null; }
   }
 
   async stop() {
@@ -132,14 +193,89 @@ class AgentManager extends EventEmitter {
       ]);
     }
     if (child.exitCode === null) child.kill();
-    this.child = null;
+    if (this.child === child) this.child = null;
     this.ready = false;
+    await this._forgetChild(child.pid);
+  }
+
+  async _terminateChild(child) {
+    if (!child || child.exitCode !== null) return;
+    child.kill();
+    await Promise.race([
+      new Promise(resolve => child.once('exit', resolve)),
+      new Promise(resolve => setTimeout(resolve, 1500)),
+    ]);
+    if (child.exitCode === null) child.kill('SIGKILL');
+  }
+
+  async _rememberChild(pid, launch) {
+    if (!pid) return;
+    try {
+      await fs.promises.mkdir(path.dirname(this.pidFile), { recursive: true });
+      await fs.promises.writeFile(this.pidFile, JSON.stringify({ pid, ownerPid: process.pid, command: launch.command, args: launch.args }));
+    } catch (error) {
+      this.emit('diagnostic', `Unable to record Agent process: ${error.message}`);
+    }
+  }
+
+  async _forgetChild(pid) {
+    try {
+      const saved = JSON.parse(await fs.promises.readFile(this.pidFile, 'utf8'));
+      if (saved.pid === pid) await fs.promises.rm(this.pidFile, { force: true });
+    } catch (error) {
+      if (error.code !== 'ENOENT' && error.name !== 'SyntaxError') this.emit('diagnostic', `Unable to clear Agent process record: ${error.message}`);
+    }
+  }
+
+  async _cleanupStaleProcess() {
+    let saved;
+    try { saved = JSON.parse(await fs.promises.readFile(this.pidFile, 'utf8')); }
+    catch (error) {
+      if (error.code !== 'ENOENT') await fs.promises.rm(this.pidFile, { force: true }).catch(() => undefined);
+      return;
+    }
+    if (!Number.isInteger(saved.pid) || saved.pid <= 0 || saved.ownerPid === process.pid) return;
+    try {
+      process.kill(saved.ownerPid, 0);
+      return;
+    } catch {}
+    if (!await this._isRecordedAgentProcess(saved)) {
+      await fs.promises.rm(this.pidFile, { force: true }).catch(() => undefined);
+      return;
+    }
+    try {
+      process.kill(saved.pid, 'SIGTERM');
+      this.emit('diagnostic', `Stopped stale Agent process ${saved.pid}`);
+    } catch (error) {
+      if (error.code !== 'ESRCH') this.emit('diagnostic', `Unable to stop stale Agent process: ${error.message}`);
+    }
+    await fs.promises.rm(this.pidFile, { force: true }).catch(() => undefined);
+  }
+
+  async _isRecordedAgentProcess(saved) {
+    if (typeof saved.command !== 'string' || !saved.command) return false;
+    try {
+      let commandLine = '';
+      if (process.platform === 'linux') {
+        commandLine = (await fs.promises.readFile(`/proc/${saved.pid}/cmdline`, 'utf8')).replaceAll('\0', ' ');
+      } else if (process.platform === 'win32') {
+        const script = `(Get-CimInstance Win32_Process -Filter \"ProcessId = ${saved.pid}\").CommandLine`;
+        commandLine = (await execFileAsync('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 2000 })).stdout;
+      } else {
+        commandLine = (await execFileAsync('ps', ['-p', String(saved.pid), '-o', 'command='], { timeout: 2000 })).stdout;
+      }
+      const markers = [saved.command, ...(Array.isArray(saved.args) ? saved.args : [])].filter(value => typeof value === 'string' && value.length > 2);
+      return markers.length > 0 && markers.every(marker => commandLine.includes(marker));
+    } catch {
+      return false;
+    }
   }
 
   _onExit(child, code, signal) {
     if (this.child !== child) return;
     this.child = null;
     this.ready = false;
+    this._forgetChild(child.pid);
     for (const [requestId, pending] of this.pending) {
       clearTimeout(pending.timer);
       pending.reject(new Error('Agent 进程已退出'));
@@ -154,7 +290,7 @@ class AgentManager extends EventEmitter {
       return;
     }
     this.restartTimes.push(Date.now());
-    setTimeout(() => this.start(), 1000);
+    setTimeout(() => this.start().catch(error => this.emit('diagnostic', error.message)), 1000);
   }
 }
 

@@ -66,10 +66,10 @@ class ToolRegistry:
         self.register("git_status", "查看工作区 Git 状态，不会修改仓库。", {
             "type": "object", "properties": {}, "additionalProperties": False
         }, "low", False, self._git_status)
-        self.register("write_file", "创建或覆盖工作区内的 UTF-8 文本文件。此操作需要用户批准。", {
+        self.register("write_file", "创建或覆盖工作区内的 UTF-8 文本文件。是否需要批准由当前审批模式决定。", {
             "type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
             "required": ["path", "content"], "additionalProperties": False
-        }, "high", True, self._write_file)
+        }, "medium", True, self._write_file)
         self.register("run_command", "在系统沙箱中运行单个命令。禁止网络，写入仅限当前工作区；不支持 Shell 管道或重定向。", {
             "type": "object", "properties": {
                 "command": {"type": "string"},

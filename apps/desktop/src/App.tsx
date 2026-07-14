@@ -4,7 +4,7 @@ import type { PageId } from './types';
 import { HomePage } from './pages/HomePage';
 import { ChatPage } from './pages/ChatPage';
 import { TeamPage } from './pages/TeamPage';
-import { MarketPage } from './pages/MarketPage';
+import { MarketPage, PluginSidebar, SkillSidebar } from './pages/MarketPage';
 import { DocsPage } from './pages/DocsPage';
 import { AgentProvider } from './agent/AgentContext';
 
@@ -17,6 +17,8 @@ function readPage(): PageId {
 
 export function App() {
   const [page, setPage] = useState<PageId>(readPage);
+  const [selectedSkillId, setSelectedSkillId] = useState('word-processing');
+  const [selectedPluginId, setSelectedPluginId] = useState('notion');
   useEffect(() => {
     const sync = () => setPage(readPage());
     addEventListener('hashchange', sync);
@@ -27,7 +29,7 @@ export function App() {
     : page === 'chat' ? <ChatPage />
     : page === 'team' ? <TeamPage />
     : page === 'docs' ? <DocsPage />
-    : <MarketPage type={page} />;
-  const layout = <AppLayout page={page} onNavigate={navigate} right={page === 'chat' ? <ChatPage.Sidebar /> : page === 'team' ? <TeamPage.Sidebar /> : undefined}>{content}</AppLayout>;
+    : <MarketPage type={page} selectedSkillId={selectedSkillId} onSelectSkill={setSelectedSkillId} selectedPluginId={selectedPluginId} onSelectPlugin={setSelectedPluginId} />;
+  const layout = <AppLayout page={page} onNavigate={navigate} right={page === 'chat' ? <ChatPage.Sidebar /> : page === 'team' ? <TeamPage.Sidebar /> : page === 'skills' ? <SkillSidebar skillId={selectedSkillId}/> : page === 'plugins' ? <PluginSidebar pluginId={selectedPluginId}/> : undefined}>{content}</AppLayout>;
   return <AgentProvider>{layout}</AgentProvider>;
 }

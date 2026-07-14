@@ -12,11 +12,11 @@ type AgentEvent = {
   error?: { code: string; message: string; retryable?: boolean };
 };
 
-type Workspace = { id: string; path: string; name: string };
+type Workspace = { id: string; path: string; name: string; created_at?: string; last_opened_at?: string; thread_count?: number };
 type FileTreeNode = { name: string; path: string; type: 'file' | 'directory'; children?: FileTreeNode[] };
 type UsageSummary = { totalTokens: number; peakTokens: number; longestTaskSeconds: number; byModel: Array<{ model_id: string; model: string; input_tokens: number; output_tokens: number; total_tokens: number; conversations: number }>; daily: Array<{ date: string; tokens: number; conversations: number }> };
 type ModelConfig = { id: string; name: string; baseUrl: string; model: string; keyAvailable: boolean; maskedKey: string };
-type RoleConfig = { id: string; name: string; role: string; modelId: string; modelName: string; baseUrl: string; model: string; keyAvailable: boolean; description: string; skills: string[]; knowledge: string[] };
+type RoleConfig = { id: string; name: string; role: string; avatar?: string; modelId: string; modelName: string; baseUrl: string; model: string; keyAvailable: boolean; description: string; skills: string[]; knowledge: string[] };
 type ModelInput = { id?: string; name: string; baseUrl: string; model: string; apiKey?: string; clearApiKey?: boolean };
 
 interface Window {
@@ -26,8 +26,15 @@ interface Window {
     window: { minimize(): Promise<void>; maximize(): Promise<void>; close(): Promise<void> };
     agent: {
       status(): Promise<Record<string, unknown>>;
+      ensureReady(): Promise<Record<string, unknown>>;
       selectWorkspace(): Promise<Workspace | null>;
+      createProject(): Promise<Workspace>;
+      listWorkspaces(): Promise<Workspace[]>;
+      deleteWorkspace(workspaceId: string): Promise<{ workspaceId: string; deleted: boolean }>;
+      renameWorkspace(input: { workspaceId: string; name: string }): Promise<{ workspaceId: string; name: string; updated: boolean }>;
       listThreads(workspaceId?: string): Promise<ThreadSummary[]>;
+      createThread(workspaceId: string): Promise<{ threadId: string }>;
+      deleteThread(threadId: string): Promise<{ threadId: string; deleted: boolean }>;
       workspaceTree(workspaceId: string): Promise<FileTreeNode[]>;
       usageSummary(): Promise<UsageSummary>;
       getThread(threadId: string): Promise<ThreadDetail>;
@@ -46,7 +53,7 @@ interface Window {
     };
     roles: {
       list(): Promise<RoleConfig[]>;
-      save(input: { id: string; modelId: string; description?: string; skills?: string[]; knowledge?: string[] }): Promise<RoleConfig>;
+      save(input: { id?: string; name?: string; role?: string; avatar?: string; modelId: string; description?: string; skills?: string[]; knowledge?: string[] }): Promise<RoleConfig>;
     };
   };
 }

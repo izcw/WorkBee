@@ -64,7 +64,7 @@ class Database:
             if "role_id" not in message_columns:
                 self._connection.execute("ALTER TABLE messages ADD COLUMN role_id TEXT")
 
-    def select_workspace(self, path: Path) -> Dict[str, Any]:
+    def select_workspace(self, path: Path, name: Optional[str] = None) -> Dict[str, Any]:
         resolved = path.expanduser().resolve(strict=True)
         if not resolved.is_dir():
             raise ValueError("Workspace must be a directory")
@@ -78,14 +78,23 @@ class Database:
                 workspace_id = str(uuid4())
                 self._connection.execute(
                     "INSERT INTO workspaces(id,path,name,created_at,last_opened_at) VALUES(?,?,?,?,?)",
-                    (workspace_id, str(resolved), resolved.name, now, now),
+                    (workspace_id, str(resolved), name or resolved.name, now, now),
                 )
-        return {"id": workspace_id, "path": str(resolved), "name": resolved.name}
+        return {"id": workspace_id, "path": str(resolved), "name": name or (row["name"] if row else resolved.name)}
 
     def get_workspace(self, workspace_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             row = self._connection.execute("SELECT id,path,name FROM workspaces WHERE id = ?", (workspace_id,)).fetchone()
         return dict(row) if row else None
+
+    def list_workspaces(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT w.id,w.path,w.name,w.created_at,w.last_opened_at,COUNT(t.id) thread_count "
+                "FROM workspaces w LEFT JOIN threads t ON t.workspace_id=w.id "
+                "GROUP BY w.id ORDER BY w.last_opened_at DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def create_thread(self, workspace_id: str, prompt: str) -> str:
         thread_id = str(uuid4())
@@ -110,7 +119,11 @@ class Database:
                 "INSERT INTO messages(id,thread_id,run_id,role,role_id,content,created_at) VALUES(?,?,?,?,?,?,?)",
                 (str(uuid4()), thread_id, run_id, "user", None, prompt, now),
             )
-            self._connection.execute("UPDATE threads SET updated_at = ? WHERE id = ?", (now, thread_id))
+            title = " ".join(prompt.strip().split())[:32] or "新对话"
+            self._connection.execute(
+                "UPDATE threads SET title=CASE WHEN title='新对话' THEN ? ELSE title END,updated_at=? WHERE id=?",
+                (title, now, thread_id),
+            )
         return run_id
 
     def set_run_status(self, run_id: str, status: str, error: Optional[str] = None) -> None:
@@ -212,6 +225,35 @@ class Database:
         result["runs"] = [dict(row) for row in runs]
         result["approvals"] = [dict(row) for row in approvals]
         return result
+
+    def delete_thread(self, thread_id: str) -> bool:
+        with self._lock, self._connection:
+            exists = self._connection.execute("SELECT 1 FROM threads WHERE id=?", (thread_id,)).fetchone()
+            if not exists:
+                return False
+            self._connection.execute("DELETE FROM approvals WHERE run_id IN (SELECT id FROM runs WHERE thread_id=?)", (thread_id,))
+            self._connection.execute("DELETE FROM checkpoints WHERE run_id IN (SELECT id FROM runs WHERE thread_id=?)", (thread_id,))
+            self._connection.execute("DELETE FROM token_usage WHERE thread_id=?", (thread_id,))
+            self._connection.execute("DELETE FROM messages WHERE thread_id=?", (thread_id,))
+            self._connection.execute("DELETE FROM runs WHERE thread_id=?", (thread_id,))
+            self._connection.execute("DELETE FROM threads WHERE id=?", (thread_id,))
+        return True
+
+    def delete_workspace(self, workspace_id: str) -> bool:
+        with self._lock, self._connection:
+            exists = self._connection.execute("SELECT 1 FROM workspaces WHERE id=?", (workspace_id,)).fetchone()
+            if not exists:
+                return False
+            thread_ids = [row["id"] for row in self._connection.execute("SELECT id FROM threads WHERE workspace_id=?", (workspace_id,)).fetchall()]
+            for thread_id in thread_ids:
+                self.delete_thread(thread_id)
+            self._connection.execute("DELETE FROM workspaces WHERE id=?", (workspace_id,))
+        return True
+
+    def rename_workspace(self, workspace_id: str, name: str) -> bool:
+        with self._lock, self._connection:
+            cursor = self._connection.execute("UPDATE workspaces SET name=? WHERE id=?", (name, workspace_id))
+        return cursor.rowcount > 0
 
     def close(self) -> None:
         with self._lock:

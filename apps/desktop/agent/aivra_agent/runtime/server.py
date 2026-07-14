@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import threading
 import traceback
@@ -16,6 +17,68 @@ from ..graphs import RunCancelled, SingleAgentGraph
 from ..protocol import MAX_LINE_BYTES, ProtocolError, envelope, validate_request
 from ..storage import Database
 from ..tools import ToolError, ToolRegistry
+
+BUILTIN_KNOWLEDGE = {
+    "aivra-working-principles": (
+        "通用工作准则：先澄清目标、交付物、约束与风险；再检查现有项目和可用资料；"
+        "将任务拆成可验证步骤，执行后用文件内容、测试或命令结果复核，不虚构已完成的操作。"
+    ),
+    "software-delivery-baseline": (
+        "软件交付基线：尊重项目既有架构和用户改动；实现前阅读相关代码，修改保持最小且完整；"
+        "按风险运行测试、类型检查或构建，明确未验证项，不执行未经授权的破坏性操作。"
+    ),
+    "product-design-guidelines": (
+        "产品与设计规范：从用户目标、关键流程和异常状态出发，保持信息层级、交互反馈和视觉语言一致；"
+        "输出可实现的结构、状态、文案与验收标准，并兼顾可访问性和不同窗口尺寸。"
+    ),
+}
+
+
+def select_role_from_output(content: Any, role_ids: List[str], providers: Dict[str, Dict[str, Any]]) -> Optional[str]:
+    """Accept common structured/text model outputs without silently defaulting to the first role."""
+    texts: List[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, str):
+            texts.append(value)
+        elif isinstance(value, dict):
+            for key in ("roleId", "role_id", "id", "text", "content"):
+                if key in value:
+                    collect(value[key])
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+
+    collect(content)
+    for text in list(texts):
+        stripped = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", text, flags=re.IGNORECASE)
+        candidates = [stripped]
+        for pattern in (r"\{[\s\S]*?\}", r"\[[\s\S]*?\]"):
+            candidates.extend(re.findall(pattern, stripped))
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            parsed_texts: List[str] = []
+            before = len(texts)
+            collect(parsed)
+            parsed_texts.extend(texts[before:])
+            for value in parsed_texts:
+                if value in role_ids:
+                    return value
+
+    searchable = "\n".join(texts)
+    mentions: List[tuple[int, str]] = []
+    for role_id in role_ids:
+        provider_name = str(providers.get(role_id, {}).get("name") or "")
+        for label in (role_id, provider_name):
+            if not label:
+                continue
+            match = re.search(rf"(?<![\w-]){re.escape(label)}(?![\w-])", searchable, flags=re.IGNORECASE)
+            if match:
+                mentions.append((match.start(), role_id))
+    return min(mentions)[1] if mentions else None
 
 
 @dataclass
@@ -121,7 +184,7 @@ class AgentServer:
             self.respond(request, "runtime.shutdown", {"accepted": True})
             return True
         elif message_type == "workspace.select":
-            workspace = self.database.select_workspace(Path(self._required_string(payload, "path")))
+            workspace = self.database.select_workspace(Path(self._required_string(payload, "path")), str(payload.get("name") or "").strip()[:80] or None)
             self.respond(request, "workspace.selected", {"workspace": workspace})
         elif message_type == "workspace.tree":
             workspace = self.database.get_workspace(self._required_string(payload, "workspaceId"))
@@ -129,11 +192,29 @@ class AgentServer:
                 self.respond(request, "workspace.tree", {}, {"code": "WORKSPACE_NOT_FOUND", "message": "Workspace not found", "retryable": False})
             else:
                 self.respond(request, "workspace.tree", {"tree": self._workspace_tree(Path(workspace["path"]))})
+        elif message_type == "workspace.list":
+            self.respond(request, "workspace.list", {"workspaces": self.database.list_workspaces()})
+        elif message_type == "workspace.delete":
+            workspace_id = self._required_string(payload, "workspaceId")
+            self.respond(request, "workspace.delete", {"workspaceId": workspace_id, "deleted": self.database.delete_workspace(workspace_id)})
+        elif message_type == "workspace.rename":
+            workspace_id = self._required_string(payload, "workspaceId")
+            name = self._required_string(payload, "name").strip()[:80]
+            self.respond(request, "workspace.rename", {"workspaceId": workspace_id, "name": name, "updated": self.database.rename_workspace(workspace_id, name)})
         elif message_type == "usage.summary":
             self.respond(request, "usage.summary", {"usage": self.database.usage_summary()})
         elif message_type == "thread.list":
             workspace_id = payload.get("workspaceId")
             self.respond(request, "thread.list", {"threads": self.database.list_threads(workspace_id)})
+        elif message_type == "thread.create":
+            workspace_id = self._required_string(payload, "workspaceId")
+            if self.database.get_workspace(workspace_id) is None:
+                self.respond(request, "thread.create", {}, {"code": "WORKSPACE_NOT_FOUND", "message": "Workspace not found", "retryable": False})
+            else:
+                self.respond(request, "thread.create", {"threadId": self.database.create_thread(workspace_id, "")})
+        elif message_type == "thread.delete":
+            thread_id = self._required_string(payload, "threadId")
+            self.respond(request, "thread.delete", {"threadId": thread_id, "deleted": self.database.delete_thread(thread_id)})
         elif message_type == "thread.get":
             thread = self.database.get_thread(self._required_string(payload, "threadId"))
             if thread is None:
@@ -189,9 +270,14 @@ class AgentServer:
         thread_id = payload.get("threadId")
         if not isinstance(thread_id, str) or not thread_id:
             thread_id = self.database.create_thread(workspace_id, prompt)
-        elif self.database.get_thread(thread_id) is None:
-            self.respond(request, "run.created", {}, {"code": "THREAD_NOT_FOUND", "message": "Thread not found", "retryable": False})
-            return
+        else:
+            existing_thread = self.database.get_thread(thread_id)
+            if existing_thread is None:
+                self.respond(request, "run.created", {}, {"code": "THREAD_NOT_FOUND", "message": "Thread not found", "retryable": False})
+                return
+            if existing_thread["workspace_id"] != workspace_id:
+                self.respond(request, "run.created", {}, {"code": "THREAD_WORKSPACE_MISMATCH", "message": "Thread does not belong to the selected workspace", "retryable": False})
+                return
         run_id = self.database.create_run(thread_id, prompt, mode, role_id)
         cancel = threading.Event()
         with self._state_lock:
@@ -239,45 +325,66 @@ class AgentServer:
             thread = self.database.get_thread(thread_id)
             assert thread is not None
             if len(role_ids) > 1:
+                emit("team.selecting", {"roleIds": role_ids, "names": [self.providers[item]["name"] for item in role_ids]})
                 router_role_id = role_id
                 router_provider = provider
                 selector_graph = SingleAgentGraph(
                     api_key=router_provider["apiKey"], base_url=router_provider["baseUrl"], model=router_provider["model"], tools=[],
                     on_delta=lambda _delta: None, cancel_event=cancel,
                 )
-                roster = "\n".join(f"{item}: {self.providers[item]['name']} — {self.providers[item].get('description', '')}" for item in role_ids)
-                recent_dialogue = "\n".join(f"{item['role']}: {item['content']}" for item in thread["messages"][-8:])
+                roster_order = [item for item in role_ids if item != "aivra"] + [item for item in role_ids if item == "aivra"]
+                roster = "\n".join(
+                    f"{item}: {self.providers[item]['name']} — {self.providers[item].get('description', '')}；"
+                    f"技能：{'、'.join(self.providers[item].get('skills', []))}"
+                    for item in roster_order
+                )
+                def dialogue_speaker(item: Dict[str, Any]) -> str:
+                    if item["role"] == "user":
+                        return "用户"
+                    message_role_id = item.get("role_id")
+                    return self.providers.get(message_role_id, {}).get("name", "助手")
+
+                recent_dialogue = "\n".join(f"{dialogue_speaker(item)}: {item['content']}" for item in thread["messages"][-10:])
                 selector_response = selector_graph.invoke([
-                    SystemMessage(content="根据当前对话，从候选角色中选择最适合直接回答用户的一个角色。只输出 JSON 数组，且只能包含一个角色 id。"),
+                    SystemMessage(content=(
+                        "你是群聊角色路由器。根据候选角色的职责、用户最新问题以及带说话人姓名的历史对话，"
+                        "选择最适合直接回答本轮问题的一个角色。不要因为某角色刚刚回答过就默认继续选择它；"
+                        "应以本轮问题与职责的匹配度为准。候选顺序不代表优先级；当工程、产品设计、研究文档等专业角色"
+                        "与任务直接匹配时优先选择专业角色，只有任务确实需要跨领域统筹或没有专业角色匹配时才选择统筹角色。"
+                        "只输出一个 JSON 对象，格式为 {\"roleId\":\"候选角色 id\"}，不要输出解释。"
+                    )),
                     HumanMessage(content=f"候选角色：\n{roster}\n\n当前对话：\n{recent_dialogue}"),
                 ])
                 self._record_usage(run_id, thread_id, router_role_id, router_provider, selector_response)
-                selection_text = selector_response.content if isinstance(selector_response.content, str) else json.dumps(selector_response.content, ensure_ascii=False)
-                try:
-                    parsed_selection = json.loads(selection_text)
-                except json.JSONDecodeError:
-                    parsed_selection = []
-                answer_role_id = next((item for item in parsed_selection if item in role_ids), role_id) if isinstance(parsed_selection, list) else role_id
+                answer_role_id = select_role_from_output(selector_response.content, role_ids, self.providers)
+                if answer_role_id is None:
+                    raise RuntimeError("智能角色选择未返回有效角色，请重试")
                 role_ids = [answer_role_id]
                 role_id = answer_role_id
                 provider = self.providers[role_id]
                 self.database.set_run_role(run_id, role_id)
                 emit("team.selected", {"roleIds": role_ids, "names": [provider["name"]], "answerRoleId": role_id})
             registry = ToolRegistry(Path(workspace["path"]))
-            allow_side_effects = mode == "task"
             team_names = "、".join(self.providers[item]["name"] for item in role_ids)
+            knowledge_refs = provider.get("knowledge", [])
+            knowledge_guidance = "\n".join(BUILTIN_KNOWLEDGE.get(item, f"知识库引用：{item}") for item in knowledge_refs)
             system = (
-                f"你是 {provider['name']}。角色描述：{provider.get('description', '')}。已启用技能：{'、'.join(provider.get('skills', [])) or '通用能力'}。知识库引用：{'、'.join(provider.get('knowledge', [])) or '无'}。"
+                f"你是 {provider['name']}。角色描述：{provider.get('description', '')}。已启用技能：{'、'.join(provider.get('skills', [])) or '通用能力'}。"
+                f"内置知识与引用：{knowledge_guidance or '无'}。"
                 f"当前参与任务的 Aivra 团队成员为：{team_names}。用中文简洁回答。"
                 f"当前且唯一授权工作区是 {workspace['name']}。不得访问或操作该文件夹之外的任何路径。读取上下文时主动使用工具。"
-                "不得声称执行过未调用的工具。对话模式只有只读工具；任务模式的文件写入和沙箱命令会由系统向用户请求批准。"
+                "不得声称执行过未调用的工具。你可以使用系统实际提供的读写与命令工具；是否需要用户批准由运行时按当前审批模式和风险等级决定，不要自行要求用户用文字确认。"
                 "命令工具不经过 Shell，网络被禁用，写入仅限当前工作区。"
             )
             if workflow_name:
                 system += f"当前流程为“{workflow_name}”。"
             if documents:
-                safe_documents = [item for item in documents if not Path(item).is_absolute() and ".." not in Path(item).parts]
-                system += "本流程引用的工作区文档为：" + "、".join(safe_documents) + "。需要内容时使用读取工具，不能假装已读。"
+                knowledge_documents = [item for item in documents if item in BUILTIN_KNOWLEDGE]
+                workspace_documents = [item for item in documents if item not in BUILTIN_KNOWLEDGE and not Path(item).is_absolute() and ".." not in Path(item).parts]
+                if knowledge_documents:
+                    system += "当前流程引用的知识库内容：" + "\n".join(BUILTIN_KNOWLEDGE[item] for item in knowledge_documents)
+                if workspace_documents:
+                    system += "本流程引用的工作区文档为：" + "、".join(workspace_documents) + "。需要内容时使用读取工具，不能假装已读。"
             messages: List[Any] = [SystemMessage(content=system)]
             for item in thread["messages"]:
                 if item["role"] == "user":
@@ -307,7 +414,7 @@ class AgentServer:
                 messages.insert(1, SystemMessage(content="以下是团队成员的独立分析，请核验后综合使用：\n\n" + "\n\n".join(advice_items)))
             graph = SingleAgentGraph(
                 api_key=provider["apiKey"], base_url=provider["baseUrl"], model=provider["model"],
-                tools=registry.definitions(allow_side_effects),
+                tools=registry.definitions(True),
                 on_delta=lambda delta: emit("model.delta", {"delta": delta}), cancel_event=cancel,
             )
             for _step in range(12):
@@ -332,8 +439,8 @@ class AgentServer:
                         "toolCallId": call_id, "name": name, "arguments": arguments,
                         "risk": definition.risk, "approvalRequired": definition.approval_required,
                     })
-                    needs_approval = definition.approval_required and (
-                        approval_mode == "request" or (approval_mode == "auto" and name == "run_command")
+                    needs_approval = self._needs_approval(
+                        approval_mode, definition.risk, definition.approval_required
                     )
                     if needs_approval:
                         approval_id = self.database.create_approval(run_id, name, arguments)
@@ -381,6 +488,15 @@ class AgentServer:
             with self._state_lock:
                 self._runs.pop(run_id, None)
                 self._workers.pop(run_id, None)
+
+    @staticmethod
+    def _needs_approval(approval_mode: str, risk: str, approval_required: bool) -> bool:
+        """Apply the product-level permission policy independently of chat/task mode."""
+        if not approval_required or approval_mode == "full":
+            return False
+        if approval_mode == "request":
+            return True
+        return approval_mode == "auto" and risk == "high"
 
     @staticmethod
     def _approval_summary(name: str, arguments: Dict[str, Any]) -> str:

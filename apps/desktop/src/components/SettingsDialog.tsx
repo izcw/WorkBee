@@ -1,7 +1,8 @@
-import { Bot, KeyRound, LoaderCircle, Plus, Settings2, TestTube2, Trash2, UserRound, X } from 'lucide-react';
+import { Bot, KeyRound, LoaderCircle, Plus, Settings2, TestTube2, Trash2, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAgent } from '../agent/AgentContext';
 import { Avatar } from './ui';
+import { ModalDialog } from './ModalDialog';
 
 type Section = 'profile' | 'general' | 'models';
 
@@ -58,9 +59,7 @@ export function SettingsDialog({ close }: { close: () => void }) {
     finally { setTesting(false); }
   };
 
-  return <div className="settings-overlay" onMouseDown={event => event.target === event.currentTarget && close()}>
-    <section className="settings-window" role="dialog" aria-modal="true" aria-label="设置">
-      <header><strong>设置</strong><button onClick={close} aria-label="关闭设置"><X size={18}/></button></header>
+  return <ModalDialog title="设置" close={close} className="settings-window">
       <div className="settings-layout">
         <nav>
           <button className={section === 'profile' ? 'active' : ''} onClick={() => setSection('profile')}><UserRound size={16}/>个人资料</button>
@@ -78,7 +77,7 @@ export function SettingsDialog({ close }: { close: () => void }) {
                 <h3>{editingId ? '编辑模型' : '添加模型'}</h3>
                 {editingId && <div className="model-usage-summary"><span>累计 Token</span><strong>{formatTokens(usage.byModel.find(item => item.model_id === editingId)?.total_tokens || 0)}</strong><small>{usage.byModel.find(item => item.model_id === editingId)?.conversations || 0} 次任务</small></div>}
                 <label>显示名称<input value={name} onChange={event => setName(event.target.value)} placeholder="例如 DeepSeek"/></label>
-                <label>Base URL<input value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="https://api.example.com/v1"/></label>
+                <label>Base URL<input value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="https://api.xxx"/></label>
                 <label>Model<input value={model} onChange={event => setModel(event.target.value)} placeholder="模型标识"/></label>
                 <label>API Key <span>{editing?.keyAvailable ? editing.maskedKey : '未配置'}</span><div className="model-key"><KeyRound size={15}/><input type="password" autoComplete="off" value={apiKey} onChange={event => { setApiKey(event.target.value); setClearApiKey(false); }} placeholder={editing?.maskedKey || 'sk-…'}/></div></label>
                 {editing?.keyAvailable && <label className="clear-key"><input type="checkbox" checked={clearApiKey} onChange={event => { setClearApiKey(event.target.checked); setApiKey(''); }}/>移除当前 API Key</label>}
@@ -89,8 +88,7 @@ export function SettingsDialog({ close }: { close: () => void }) {
           </div>}
         </main>
       </div>
-    </section>
-  </div>;
+  </ModalDialog>;
 }
 
 function formatTokens(value: number) { return new Intl.NumberFormat('zh-CN').format(value); }
@@ -99,11 +97,17 @@ function formatDuration(seconds: number) { if (seconds < 60) return `${seconds} 
 function ProfileSettings({ usage }: { usage: UsageSummary }) {
   const days = heatmapDays(usage.daily);
   const max = Math.max(1, ...days.map(day => day.tokens));
-  return <div className="profile-settings"><div className="profile-identity"><Avatar kind="yellow" size={76}/><h2>Yoko</h2><p>yoko@aivra.ai</p></div><div className="profile-metrics"><div><strong>{formatTokens(usage.totalTokens)}</strong><span>累计 Token</span></div><div><strong>{formatTokens(usage.peakTokens)}</strong><span>单任务峰值</span></div><div><strong>{formatDuration(usage.longestTaskSeconds)}</strong><span>最长任务时长</span></div></div><section className="token-activity"><header><div><h3>Token 活动</h3><p>过去 52 周每天的模型使用量</p></div><strong>{formatTokens(usage.totalTokens)} Token</strong></header><div className="token-heatmap" aria-label="Token 活动热力图">{days.map(day => { const level = day.tokens ? Math.max(1, Math.ceil(day.tokens / max * 4)) : 0; return <i key={day.date} className={`level-${level}`} title={`${day.date} · ${formatTokens(day.tokens)} Token`}/>; })}</div><footer><span>少</span>{[0,1,2,3,4].map(level => <i key={level} className={`level-${level}`}/>)}<span>多</span></footer></section></div>;
+  return <div className="profile-settings"><div className="profile-identity"><Avatar kind="yellow" size={76}/><h2>Yoko</h2><p>yoko@aivra.ai</p></div><div className="profile-metrics"><div><strong>{formatTokens(usage.totalTokens)}</strong><span>累计 Token</span></div><div><strong>{formatTokens(usage.peakTokens)}</strong><span>单任务峰值</span></div><div><strong>{formatDuration(usage.longestTaskSeconds)}</strong><span>最长任务时长</span></div></div><section className="token-activity"><header><div><h3>Token 活动</h3><p>过去 52 周每天的模型使用量</p></div><strong>{formatTokens(usage.totalTokens)} Token</strong></header><div className="token-heatmap" aria-label="Token 活动热力图">{days.map(day => { const level = day.tokens ? Math.max(1, Math.min(4, Math.ceil(day.tokens / max * 4))) : 0; return <i key={day.date} className={`level-${level} ${day.future ? 'future' : ''}`} title={day.future ? day.date : `${day.date} · ${formatTokens(day.tokens)} Token`}/>; })}</div><footer><span>少</span>{[0,1,2,3,4].map(level => <i key={level} className={`level-${level}`}/>)}<span>多</span></footer></section></div>;
 }
 
 function heatmapDays(daily: UsageSummary['daily']) {
   const map = new Map(daily.map(item => [item.date, item.tokens]));
-  const end = new Date(); const start = new Date(end); start.setDate(end.getDate() - 363);
-  return Array.from({ length: 364 }, (_, index) => { const day = new Date(start); day.setDate(start.getDate() + index); const date = day.toLocaleDateString('en-CA'); return { date, tokens: map.get(date) || 0 }; });
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  const end = new Date(today); end.setDate(today.getDate() + (6 - today.getDay()));
+  const start = new Date(end); start.setDate(end.getDate() - 363);
+  return Array.from({ length: 364 }, (_, index) => {
+    const day = new Date(start); day.setDate(start.getDate() + index);
+    const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    return { date, tokens: map.get(date) || 0, future: day > today };
+  });
 }

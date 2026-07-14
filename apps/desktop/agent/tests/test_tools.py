@@ -38,6 +38,7 @@ def test_side_effect_tools_require_approval(tmp_path: Path):
     assert "run_command" not in definitions
     assert "run_command" in {item["function"]["name"] for item in registry.definitions(True)}
     assert registry.describe("run_command").approval_required is True
+    assert registry.describe("write_file").risk == "medium"
 
 
 @pytest.mark.skipif(platform.system() != "Darwin", reason="Seatbelt sandbox is macOS-specific")
