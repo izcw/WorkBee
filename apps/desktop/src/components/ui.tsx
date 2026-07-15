@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ButtonHTMLAttributes, PropsWithChildren, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, HTMLAttributes, PropsWithChildren, ReactNode } from 'react';
 import { Check, ChevronDown, Plus, Search } from 'lucide-react';
 import avatarImage from '../assets/images/avatar.png';
 
@@ -11,8 +11,8 @@ export function Pill({ children, active = false, onClick }: { children: ReactNod
   return <button className={`pill ${active ? 'pill-active' : ''}`} onClick={onClick}>{children}</button>;
 }
 
-export function Card({ children, className = '' }: PropsWithChildren<{ className?: string }>) {
-  return <section className={`card ${className}`}>{children}</section>;
+export function Card({ children, className = '', ...props }: PropsWithChildren<HTMLAttributes<HTMLElement>>) {
+  return <section className={`card ${className}`} {...props}>{children}</section>;
 }
 
 export function SearchInput({ placeholder = '搜索', className = '' }: { placeholder?: string; className?: string }) {

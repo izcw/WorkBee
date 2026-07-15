@@ -20,19 +20,18 @@
     "desktop:pack": "npm run build && npm run agent:build && electron-builder --dir",
     "desktop:dist": "npm run build && npm run agent:build && electron-builder"
   },
-  "dependencies": {},
   "devDependencies": {
-    "@vitejs/plugin-react": "latest",
-    "lucide-react": "latest",
-    "vite": "latest",
-    "react": "latest",
-    "react-dom": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "typescript": "latest",
+    "@vitejs/plugin-react": "latest",
     "concurrently": "latest",
     "electron": "latest",
     "electron-builder": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest",
     "wait-on": "latest"
   },
   "build": {
@@ -40,11 +39,38 @@
     "productName": "Aivra",
     "electronDist": "node_modules/electron/dist",
     "icon": "electron/Aivra.png",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "electron/**/*", "package.json"],
-    "extraResources": [{ "from": "agent/dist/aivra-agent", "to": "agent/aivra-agent" }],
-    "mac": { "icon": "electron/Aivra.png", "category": "public.app-category.productivity", "target": ["dmg", "zip"] },
-    "win": { "icon": "electron/Aivra.png", "target": "nsis" },
-    "linux": { "icon": "electron/Aivra.png", "target": "AppImage" }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "agent/dist/aivra-agent",
+        "to": "agent/aivra-agent"
+      }
+    ],
+    "mac": {
+      "icon": "electron/Aivra.png",
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "electron/Aivra.png",
+      "target": "nsis"
+    },
+    "linux": {
+      "icon": "electron/Aivra.png",
+      "target": "AppImage"
+    }
+  },
+  "dependencies": {
+    "@mdxeditor/editor": "^4.0.4"
   }
 }

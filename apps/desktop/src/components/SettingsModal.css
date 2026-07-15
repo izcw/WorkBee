@@ -1,0 +1,22 @@
+.settings-modal-list {
+  flex: 1;
+  min-height: 0;
+  margin: 16px 18px 0;
+  overflow: auto;
+}
+
+.settings-modal-footer {
+  padding: 0 18px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #71717a;
+}
+
+.settings-modal-footer button {
+  height: 33px;
+  padding: 0 15px;
+  border-radius: 9px;
+  background: #1313bb;
+  color: #fff;
+}

@@ -149,7 +149,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string>();
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
-  const [mode, setMode] = useState<'chat' | 'task'>('task');
+  const [mode, setMode] = useState<'chat' | 'task'>('chat');
   const [approvalMode, setApprovalMode] = useState<'request' | 'auto' | 'full'>('request');
   const workspaceRef = useRef<Workspace | null>(null);
   const projectsRef = useRef<Workspace[]>([]);

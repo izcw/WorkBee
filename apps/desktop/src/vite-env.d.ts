@@ -28,6 +28,8 @@ interface Window {
       status(): Promise<Record<string, unknown>>;
       ensureReady(): Promise<Record<string, unknown>>;
       selectWorkspace(): Promise<Workspace | null>;
+      openWorkspace(workspacePath: string): Promise<void>;
+      executeCommand(input: { command: string; cwd?: string }): Promise<{ stdout: string; stderr: string; code: number }>;
       createProject(): Promise<Workspace>;
       listWorkspaces(): Promise<Workspace[]>;
       deleteWorkspace(workspaceId: string): Promise<{ workspaceId: string; deleted: boolean }>;

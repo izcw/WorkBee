@@ -3,13 +3,13 @@ import pdfIcon from '../assets/icon/pdf.png';
 import markdownIcon from '../assets/icon/markdown.png';
 import txtIcon from '../assets/icon/txt.png';
 
-export type KnowledgeDocument = { id: string; name: string; type: 'word' | 'pdf' | 'markdown'; icon: string; location: string; size: string; updatedAt: string };
+export type KnowledgeDocument = { id: string; name: string; type: 'word' | 'pdf' | 'markdown'; icon: string; location: string; size: string; updatedAt: string; content?: string };
 export type SkillCatalogItem = { id: string; title: string; desc: string; details: string; capabilities: string[]; count: string; icon: string; automatic?: boolean };
 
 export const KNOWLEDGE_DOCUMENTS: KnowledgeDocument[] = [
-  { id: 'aivra-working-principles', name: 'Aivra 通用工作准则', type: 'markdown', icon: markdownIcon, location: '内置知识库 / 工作方法', size: '内置', updatedAt: '2026-07-14' },
-  { id: 'software-delivery-baseline', name: '软件开发与质量基线', type: 'markdown', icon: markdownIcon, location: '内置知识库 / 软件开发', size: '内置', updatedAt: '2026-07-14' },
-  { id: 'product-design-guidelines', name: '产品与设计交付规范', type: 'markdown', icon: markdownIcon, location: '内置知识库 / 产品设计', size: '内置', updatedAt: '2026-07-14' },
+  { id: 'aivra-working-principles', name: 'Aivra 通用工作准则', type: 'markdown', icon: markdownIcon, location: '内置知识库 / 工作方法', size: '内置', updatedAt: '2026-07-14', content: '# Aivra 通用工作准则\n\n## 工作目标\n\n把复杂目标拆解为清晰、可执行、可验证的交付结果。\n\n## 基本原则\n\n- 先理解目标、边界和验收标准。\n- 优先检查现有内容，再进行修改。\n- 每次交付都说明验证结果与已知限制。\n' },
+  { id: 'software-delivery-baseline', name: '软件开发与质量基线', type: 'markdown', icon: markdownIcon, location: '内置知识库 / 软件开发', size: '内置', updatedAt: '2026-07-14', content: '# 软件开发与质量基线\n\n## 交付流程\n\n1. 阅读项目结构和现有约定。\n2. 设计最小可行改动。\n3. 实现后运行相关测试或构建。\n4. 汇总变更范围、验证结果和风险。\n\n> 代码质量的核心是可理解、可维护、可验证。\n' },
+  { id: 'product-design-guidelines', name: '产品与设计交付规范', type: 'markdown', icon: markdownIcon, location: '内置知识库 / 产品设计', size: '内置', updatedAt: '2026-07-14', content: '# 产品与设计交付规范\n\n## 设计交付要求\n\n- 明确用户目标与使用场景。\n- 描述关键流程、页面结构和组件状态。\n- 对空状态、错误状态和加载状态给出说明。\n- 为实现和验收提供清晰标准。\n' },
 ];
 
 export const SKILL_CATALOG: SkillCatalogItem[] = [

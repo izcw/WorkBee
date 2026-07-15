@@ -2,11 +2,14 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { randomUUID } = require('node:crypto');
+const { exec } = require('node:child_process');
+const { promisify } = require('node:util');
 const { AgentManager } = require('./agent-manager.cjs');
 const { SecureStore } = require('./secure-store.cjs');
 const { RoleStore } = require('./role-store.cjs');
 const { ModelStore } = require('./model-store.cjs');
 const { testOpenAIConnection } = require('./provider-test.cjs');
+const execAsync = promisify(exec);
 
 const isDev = !app.isPackaged;
 const appIcon = path.join(__dirname, 'Aivra.png');
@@ -90,6 +93,22 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (result.canceled || !result.filePaths[0]) return null;
     const response = await agentManager.requestReady('workspace.select', { path: result.filePaths[0] });
     return response.payload.workspace;
+  });
+  ipcMain.handle('agent:open-workspace', async (_event, workspacePath) => {
+    if (typeof workspacePath !== 'string' || !workspacePath.trim()) return;
+    const error = await shell.openPath(workspacePath);
+    if (error) throw new Error(error);
+  });
+  ipcMain.handle('agent:execute-command', async (_event, input) => {
+    const command = typeof input?.command === 'string' ? input.command.trim() : '';
+    if (!command || command.length > 2000) throw new Error('命令不能为空或过长');
+    const cwd = typeof input?.cwd === 'string' && input.cwd.trim() ? input.cwd : app.getPath('home');
+    try {
+      const result = await execAsync(command, { cwd, timeout: 15000, maxBuffer: 512 * 1024, shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh' });
+      return { stdout: result.stdout, stderr: result.stderr, code: 0 };
+    } catch (error) {
+      return { stdout: error.stdout || '', stderr: error.stderr || error.message, code: typeof error.code === 'number' ? error.code : 1 };
+    }
   });
   ipcMain.handle('agent:create-project', async () => {
     const id = randomUUID();

@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('aivraDesktop', {
     status: () => ipcRenderer.invoke('agent:status'),
     ensureReady: () => ipcRenderer.invoke('agent:ensure-ready'),
     selectWorkspace: () => ipcRenderer.invoke('agent:select-workspace'),
+    openWorkspace: workspacePath => ipcRenderer.invoke('agent:open-workspace', workspacePath),
+    executeCommand: input => ipcRenderer.invoke('agent:execute-command', input),
     createProject: () => ipcRenderer.invoke('agent:create-project'),
     listWorkspaces: () => ipcRenderer.invoke('agent:list-workspaces'),
     deleteWorkspace: workspaceId => ipcRenderer.invoke('agent:delete-workspace', workspaceId),

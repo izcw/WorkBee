@@ -1,0 +1,124 @@
+.document-preview-window {
+  background: #fff !important;
+}
+
+.document-title-link {
+  cursor: pointer;
+}
+
+.document-title-link:hover {
+  color: #1313bb;
+  text-decoration: underline;
+}
+
+.document-preview-body {
+  flex: 1;
+  min-height: 0;
+  margin: 8px 18px 0;
+  overflow: auto;
+  background: #fff;
+}
+
+.document-preview-body .toastui-editor-defaultUI {
+  height: 100%;
+  border: 0;
+}
+
+.document-preview-body .toastui-editor-contents {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 28px 32px;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #292a2f;
+  line-height: 1.8;
+  border: 0;
+  box-shadow: none;
+}
+
+.document-preview-body > .mdxeditor {
+  min-height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.document-preview-body .mdxeditor-root-contenteditable {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 28px 32px;
+  background: #fff;
+  color: #292a2f;
+  line-height: 1.8;
+}
+
+.document-preview-body .mdxeditor-toolbar {
+  border: 0;
+  box-shadow: none;
+}
+
+.document-preview-body .toastui-editor-contents h1,
+.document-preview-body .toastui-editor-contents h2,
+.document-preview-body .toastui-editor-contents h3 {
+  color: #18181b;
+  letter-spacing: -0.02em;
+}
+
+.document-preview-body .toastui-editor-contents h1 {
+  margin-top: 0;
+  font-size: 28px;
+}
+
+.document-preview-body .toastui-editor-contents h2 {
+  margin-top: 28px;
+  padding-bottom: 6px;
+  border-bottom: 0;
+  font-size: 19px;
+}
+
+.document-preview-body .toastui-editor-contents blockquote {
+  margin-left: 0;
+  padding: 10px 16px;
+  border: 0;
+  background: #f5f5ff;
+  color: #5f6170;
+}
+
+.document-preview-body .toastui-editor-contents code {
+  border: 0;
+  border-radius: 5px;
+  background: #f1f1f4;
+}
+
+.document-preview-body .toastui-editor-contents pre {
+  border: 0;
+  border-radius: 9px;
+  background: #f4f4f6;
+}
+
+.document-preview-footer {
+  padding: 14px 18px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #71717a;
+  font-size: 11px;
+}
+
+.document-preview-footer > div {
+  display: flex;
+  gap: 8px;
+}
+
+.document-preview-footer button {
+  height: 34px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 9px;
+  background: #eceef1;
+}
+
+.document-preview-footer button.primary {
+  background: #18181b;
+  color: #fff;
+}
