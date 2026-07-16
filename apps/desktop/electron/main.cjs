@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { randomUUID } = require('node:crypto');
@@ -12,6 +12,7 @@ const { testOpenAIConnection } = require('./provider-test.cjs');
 const execAsync = promisify(exec);
 
 const isDev = !app.isPackaged;
+const isMac = process.platform === 'darwin';
 const appIcon = path.join(__dirname, 'Aivra.png');
 let agentManager;
 
@@ -32,6 +33,29 @@ function requireString(value, name, max = 200_000) {
   return value;
 }
 
+const GITHUB_MCP_URL = 'https://api.githubcopilot.com/mcp/';
+
+async function verifyGithubMcp(token) {
+  const response = await fetch(GITHUB_MCP_URL, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json, text/event-stream',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'MCP-Protocol-Version': '2025-03-26',
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'Aivra', version: '0.1.0' } } }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(response.status === 401 ? 'GitHub PAT 无效，或尚未授予 MCP 访问权限' : `GitHub MCP 连接失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}`);
+  }
+  const payload = await response.text();
+  if (!payload.includes('result') && !payload.includes('serverInfo')) throw new Error('GitHub MCP 未返回有效的初始化响应');
+  return { serverUrl: GITHUB_MCP_URL };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -40,9 +64,9 @@ function createWindow() {
     minHeight: 680,
     title: 'Aivra',
     icon: appIcon,
-    transparent: true,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 17 },
+    ...(isMac
+      ? { transparent: true, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 17 } }
+      : { frame: false, backgroundColor: '#f7f7f7' }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -51,7 +75,8 @@ function createWindow() {
     },
   });
 
-  win.setVibrancy('tooltip');
+  if (isMac) win.setVibrancy('tooltip');
+  else win.setMenuBarVisibility(false);
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
@@ -71,13 +96,14 @@ function createWindow() {
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(() => {
+  if (!isMac) Menu.setApplicationMenu(null);
   // macOS ignores BrowserWindow.icon, so set the Dock icon explicitly as well.
   if (process.platform === 'darwin') app.dock.setIcon(appIcon);
 
   const secureStore = new SecureStore(app);
   const modelStore = new ModelStore(app, secureStore);
   const roleStore = new RoleStore(app, modelStore);
-  agentManager = new AgentManager({ app, getProviderConfigs: () => roleStore.providersForAgent() });
+  agentManager = new AgentManager({ app, getProviderConfigs: () => roleStore.providersForAgent(), getGithubMcpToken: () => secureStore.getApiKey('github-mcp-token') });
   agentManager.on('event', message => sendToRenderers('agent:event', message));
   agentManager.on('status', status => sendToRenderers('agent:status', status));
   agentManager.on('diagnostic', message => console.error(`[agent] ${message}`));
@@ -87,6 +113,23 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle('window:close', event => BrowserWindow.fromWebContents(event.sender)?.close());
   ipcMain.handle('agent:status', async () => ({ ...agentManager.getStatus(), keyAvailable: await secureStore.hasApiKey() }));
   ipcMain.handle('agent:ensure-ready', async () => agentManager.ensureReady());
+  ipcMain.handle('plugins:github-status', async () => ({ connected: await secureStore.hasApiKey('github-mcp-token'), serverUrl: GITHUB_MCP_URL }));
+  ipcMain.handle('plugins:github-open-token-page', async () => {
+    await shell.openExternal('https://github.com/settings/personal-access-tokens/new');
+    return { opened: true };
+  });
+  ipcMain.handle('plugins:github-connect', async (_event, input) => {
+    const token = requireString(input?.token, 'GitHub PAT', 500);
+    const result = await verifyGithubMcp(token);
+    await secureStore.setApiKey('github-mcp-token', token);
+    await agentManager.restart();
+    return { connected: true, ...result };
+  });
+  ipcMain.handle('plugins:github-disconnect', async () => {
+    await secureStore.setApiKey('github-mcp-token', '');
+    await agentManager.restart();
+    return { connected: false };
+  });
   ipcMain.handle('agent:select-workspace', async event => {
     const window = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'], title: '选择 Aivra 工作区' });

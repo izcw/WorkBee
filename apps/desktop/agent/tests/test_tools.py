@@ -21,7 +21,12 @@ def test_symlink_escape_is_rejected(tmp_path: Path):
     workspace.mkdir()
     outside = tmp_path / "outside.txt"
     outside.write_text("secret", encoding="utf-8")
-    (workspace / "escape.txt").symlink_to(outside)
+    try:
+        (workspace / "escape.txt").symlink_to(outside)
+    except OSError as error:
+        if getattr(error, "winerror", None) == 1314:
+            pytest.skip("Windows symlink creation requires Developer Mode or the Create symbolic links privilege")
+        raise
     registry = ToolRegistry(workspace)
     with pytest.raises(ToolError):
         registry.execute("read_file", {"path": "escape.txt"})

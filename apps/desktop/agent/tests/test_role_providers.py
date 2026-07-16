@@ -28,3 +28,23 @@ def test_role_selector_accepts_json_fences_objects_and_text_names():
     assert select_role_from_output([{"type": "text", "text": '["mira"]'}], role_ids, providers) == "mira"
     assert select_role_from_output("最适合的角色是 Nova。", role_ids, providers) == "nova"
     assert select_role_from_output("无法判断", role_ids, providers) is None
+
+
+def test_role_selector_context_is_compact_and_keeps_latest_turn():
+    from aivra_agent.runtime.server import compact_role_selector_context
+
+    providers = {
+        "aivra": {"name": "Aivra", "description": "general" * 100, "skills": ["general"] * 20},
+        "nova": {"name": "Nova", "description": "engineering" * 100, "skills": ["code"] * 20},
+    }
+    messages = [
+        {"role": "user", "content": f"older-{index}" * 300, "role_id": None}
+        for index in range(5)
+    ] + [{"role": "user", "content": "latest request", "role_id": None}]
+
+    roster, dialogue = compact_role_selector_context(messages, providers, ["aivra", "nova"])
+
+    assert "latest request" in dialogue
+    assert "older-0" not in dialogue
+    assert len(roster) < 900
+    assert len(dialogue) <= 4 * (len("user: ") + 900 + 1)

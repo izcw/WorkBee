@@ -16,10 +16,11 @@ function now() { return new Date().toISOString(); }
 function id() { return crypto.randomUUID(); }
 
 class AgentManager extends EventEmitter {
-  constructor({ app, getProviderConfigs }) {
+  constructor({ app, getProviderConfigs, getGithubMcpToken }) {
     super();
     this.app = app;
     this.getProviderConfigs = getProviderConfigs;
+    this.getGithubMcpToken = typeof getGithubMcpToken === 'function' ? getGithubMcpToken : async () => '';
     this.child = null;
     this.ready = false;
     this.stopping = false;
@@ -70,11 +71,13 @@ class AgentManager extends EventEmitter {
     await this._cleanupStaleProcess();
     const launch = this._resolveCommand();
     const providers = await this.getProviderConfigs();
+    const githubMcpToken = await this.getGithubMcpToken();
     const env = {
       PATH: process.env.PATH || '', HOME: process.env.HOME || '', LANG: process.env.LANG || 'en_US.UTF-8',
-      TMPDIR: process.env.TMPDIR || '', PYTHONUNBUFFERED: '1',
+      TMPDIR: process.env.TMPDIR || '', PYTHONUNBUFFERED: '1', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8',
       AIVRA_DATA_DIR: this.app.getPath('userData'), AIVRA_MODEL: 'deepseek-v4-flash',
       AIVRA_BASE_URL: 'https://api.deepseek.com', AIVRA_ROLE_PROVIDERS: JSON.stringify(providers),
+      ...(githubMcpToken ? { AIVRA_GITHUB_MCP_TOKEN: githubMcpToken } : {}),
     };
     this.emit('status', { status: 'starting', ready: false });
     const child = spawn(launch.command, launch.args, {

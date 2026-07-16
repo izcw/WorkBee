@@ -34,6 +34,14 @@ BUILTIN_KNOWLEDGE = {
 }
 
 
+def configure_standard_streams() -> None:
+    """Use UTF-8 for the JSON Lines protocol regardless of the Windows code page."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8", errors="strict")
+
+
 def select_role_from_output(content: Any, role_ids: List[str], providers: Dict[str, Dict[str, Any]]) -> Optional[str]:
     """Accept common structured/text model outputs without silently defaulting to the first role."""
     texts: List[str] = []
@@ -81,6 +89,32 @@ def select_role_from_output(content: Any, role_ids: List[str], providers: Dict[s
     return min(mentions)[1] if mentions else None
 
 
+def compact_role_selector_context(thread_messages: List[Dict[str, Any]], providers: Dict[str, Dict[str, Any]],
+                                  role_ids: List[str]) -> tuple[str, str]:
+    """Keep routing lightweight: it is a classifier, not another full agent turn."""
+    roster = "\n".join(
+        " | ".join(filter(None, (
+            item,
+            str(providers[item].get("name") or item)[:60],
+            str(providers[item].get("description") or "")[:180],
+            ", ".join(providers[item].get("skills", [])[:8])[:160],
+        )))
+        for item in role_ids
+    )
+
+    def speaker(message: Dict[str, Any]) -> str:
+        if message["role"] == "user":
+            return "user"
+        return str(providers.get(message.get("role_id"), {}).get("name") or "assistant")[:40]
+
+    # The current user prompt is always the last message.  A few preceding turns
+    # preserve references such as "that file" without making selection expensive.
+    dialogue = "\n".join(
+        f"{speaker(item)}: {str(item['content'])[:900]}" for item in thread_messages[-4:]
+    )
+    return roster, dialogue
+
+
 @dataclass
 class PendingApproval:
     run_id: str
@@ -96,6 +130,7 @@ class AgentServer:
         self.model = os.environ.get("AIVRA_MODEL", "deepseek-v4-flash")
         self.base_url = os.environ.get("AIVRA_BASE_URL", "https://api.deepseek.com")
         self.providers = self._load_providers()
+        self.github_mcp_token = os.environ.get("AIVRA_GITHUB_MCP_TOKEN", "")
         self._write_lock = threading.Lock()
         self._shutdown = threading.Event()
         self._runs: Dict[str, threading.Event] = {}
@@ -330,21 +365,11 @@ class AgentServer:
                 router_provider = provider
                 selector_graph = SingleAgentGraph(
                     api_key=router_provider["apiKey"], base_url=router_provider["baseUrl"], model=router_provider["model"], tools=[],
-                    on_delta=lambda _delta: None, cancel_event=cancel,
+                    on_delta=lambda _delta: None, cancel_event=cancel, streaming=False,
+                    temperature=0, timeout=20, max_retries=0, max_tokens=24,
                 )
                 roster_order = [item for item in role_ids if item != "aivra"] + [item for item in role_ids if item == "aivra"]
-                roster = "\n".join(
-                    f"{item}: {self.providers[item]['name']} — {self.providers[item].get('description', '')}；"
-                    f"技能：{'、'.join(self.providers[item].get('skills', []))}"
-                    for item in roster_order
-                )
-                def dialogue_speaker(item: Dict[str, Any]) -> str:
-                    if item["role"] == "user":
-                        return "用户"
-                    message_role_id = item.get("role_id")
-                    return self.providers.get(message_role_id, {}).get("name", "助手")
-
-                recent_dialogue = "\n".join(f"{dialogue_speaker(item)}: {item['content']}" for item in thread["messages"][-10:])
+                roster, recent_dialogue = compact_role_selector_context(thread["messages"], self.providers, roster_order)
                 selector_response = selector_graph.invoke([
                     SystemMessage(content=(
                         "你是群聊角色路由器。根据候选角色的职责、用户最新问题以及带说话人姓名的历史对话，"
@@ -364,7 +389,7 @@ class AgentServer:
                 provider = self.providers[role_id]
                 self.database.set_run_role(run_id, role_id)
                 emit("team.selected", {"roleIds": role_ids, "names": [provider["name"]], "answerRoleId": role_id})
-            registry = ToolRegistry(Path(workspace["path"]))
+            registry = ToolRegistry(Path(workspace["path"]), self.github_mcp_token)
             team_names = "、".join(self.providers[item]["name"] for item in role_ids)
             knowledge_refs = provider.get("knowledge", [])
             knowledge_guidance = "\n".join(BUILTIN_KNOWLEDGE.get(item, f"知识库引用：{item}") for item in knowledge_refs)
@@ -376,6 +401,10 @@ class AgentServer:
                 "不得声称执行过未调用的工具。你可以使用系统实际提供的读写与命令工具；是否需要用户批准由运行时按当前审批模式和风险等级决定，不要自行要求用户用文字确认。"
                 "命令工具不经过 Shell，网络被禁用，写入仅限当前工作区。"
             )
+            if self.github_mcp_token:
+                system += "已连接 GitHub MCP。名称以 github_ 开头的工具会访问 GitHub；优先使用只读工具，涉及创建、修改或删除 GitHub 资源时必须等待运行时审批。若用户使用 @github，优先调用 GitHub MCP 工具完成请求。"
+                if registry.github_mcp_error:
+                    system += f"GitHub MCP 工具发现失败：{registry.github_mcp_error}。不要声称 GitHub 工具可用；可调用 github_mcp_status 获取状态。"
             if workflow_name:
                 system += f"当前流程为“{workflow_name}”。"
             if documents:
@@ -506,6 +535,8 @@ class AgentServer:
             command = arguments.get("command", "")
             args = arguments.get("arguments", [])
             return f"在工作区沙箱中运行：{command} {' '.join(str(item) for item in args)}"[:500]
+        if name.startswith("github_"):
+            return f"调用 GitHub MCP 工具：{name}"
         return f"执行工具：{name}"
 
     def _record_usage(self, run_id: str, thread_id: str, role_id: str, provider: Dict[str, Any], response: Any) -> None:
@@ -557,6 +588,7 @@ class AgentServer:
 
 
 def main() -> None:
+    configure_standard_streams()
     server = AgentServer()
     try:
         server.serve()

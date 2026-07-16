@@ -57,6 +57,12 @@ interface Window {
       list(): Promise<RoleConfig[]>;
       save(input: { id?: string; name?: string; role?: string; avatar?: string; modelId: string; description?: string; skills?: string[]; knowledge?: string[] }): Promise<RoleConfig>;
     };
+    plugins: {
+      githubStatus(): Promise<{ connected: boolean; serverUrl: string }>;
+      openGithubTokenPage(): Promise<{ opened: boolean }>;
+      connectGithub(input: { token: string }): Promise<{ connected: boolean; serverUrl: string }>;
+      disconnectGithub(): Promise<{ connected: boolean }>;
+    };
   };
 }
 

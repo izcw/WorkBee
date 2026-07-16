@@ -49,4 +49,10 @@ contextBridge.exposeInMainWorld('aivraDesktop', {
     list: () => ipcRenderer.invoke('roles:list'),
     save: input => ipcRenderer.invoke('roles:save', input),
   },
+  plugins: {
+    githubStatus: () => ipcRenderer.invoke('plugins:github-status'),
+    openGithubTokenPage: () => ipcRenderer.invoke('plugins:github-open-token-page'),
+    connectGithub: input => ipcRenderer.invoke('plugins:github-connect', input),
+    disconnectGithub: () => ipcRenderer.invoke('plugins:github-disconnect'),
+  },
 });

@@ -15,8 +15,8 @@ export function Card({ children, className = '', ...props }: PropsWithChildren<H
   return <section className={`card ${className}`} {...props}>{children}</section>;
 }
 
-export function SearchInput({ placeholder = '搜索', className = '' }: { placeholder?: string; className?: string }) {
-  return <label className={`ui-search ${className}`}><Search size={16}/><input aria-label={placeholder} placeholder={placeholder}/></label>;
+export function SearchInput({ placeholder = '搜索', className = '', value, onChange }: { placeholder?: string; className?: string; value?: string; onChange?: (value: string) => void }) {
+  return <label className={`ui-search ${className}`}><Search size={16}/><input aria-label={placeholder} placeholder={placeholder} value={value} onChange={event => onChange?.(event.target.value)}/></label>;
 }
 
 export function Tabs({ items, value, onChange }: { items: string[]; value: string; onChange: (value: string) => void }) {

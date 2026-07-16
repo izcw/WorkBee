@@ -15,7 +15,7 @@
     "test:desktop": "node --test tests/*.test.cjs",
     "test:protocol": "npm --prefix ../../packages/protocol test",
     "agent:setup": "node scripts/setup-agent.mjs",
-    "agent:test": "agent/.venv/bin/python -m pytest agent/tests",
+    "agent:test": "node scripts/test-agent.mjs",
     "agent:build": "node scripts/build-agent.mjs",
     "desktop:pack": "npm run build && npm run agent:build && electron-builder --dir",
     "desktop:dist": "npm run build && npm run agent:build && electron-builder"
@@ -30,7 +30,7 @@
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "typescript": "latest",
+    "typescript": "5.9.3",
     "vite": "latest",
     "wait-on": "latest"
   },

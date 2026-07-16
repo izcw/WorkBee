@@ -4,9 +4,11 @@ import os
 import platform
 import shutil
 import subprocess
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List
+from .github_mcp import GithubMcpClient, GithubMcpError
 
 
 class ToolError(RuntimeError):
@@ -24,10 +26,13 @@ class ToolDefinition:
 
 
 class ToolRegistry:
-    def __init__(self, workspace: Path) -> None:
+    def __init__(self, workspace: Path, github_token: str = "") -> None:
         self.workspace = workspace.resolve(strict=True)
         self._tools: Dict[str, ToolDefinition] = {}
+        self.github_mcp_error = ""
         self._register_defaults()
+        if github_token:
+            self._register_github_mcp(github_token)
 
     def _safe_existing_path(self, relative: str) -> Path:
         if not relative or Path(relative).is_absolute():
@@ -77,6 +82,39 @@ class ToolRegistry:
                 "timeout": {"type": "integer", "minimum": 1, "maximum": 120, "default": 30},
             }, "required": ["command"], "additionalProperties": False,
         }, "high", True, self._run_command)
+
+    def _register_github_mcp(self, token: str) -> None:
+        """Expose the server's current tool list instead of maintaining a stale copy."""
+        client = GithubMcpClient(token)
+        try:
+            tools = client.list_tools()
+        except GithubMcpError as exc:
+            self.github_mcp_error = str(exc)
+            self.register("github_mcp_status", "检查 GitHub MCP 是否可用，并返回当前注册失败的原因。", {
+                "type": "object", "properties": {}, "additionalProperties": False
+            }, "low", False, lambda _arguments: f"GitHub MCP 当前不可用：{self.github_mcp_error}")
+            return
+        for item in tools[:150]:
+            remote_name = str(item["name"])
+            local_name = "github_" + re.sub(r"[^a-zA-Z0-9_]", "_", remote_name).strip("_")
+            if not local_name or local_name in self._tools:
+                continue
+            schema = item.get("inputSchema")
+            parameters = schema if isinstance(schema, dict) else {"type": "object", "properties": {}, "additionalProperties": False}
+            annotations = item.get("annotations") if isinstance(item.get("annotations"), dict) else {}
+            read_only = annotations.get("readOnlyHint") is True
+            destructive = annotations.get("destructiveHint") is True
+            risk = "low" if read_only else "high" if destructive else "medium"
+            description = str(item.get("description") or remote_name)
+            self.register(local_name, f"GitHub MCP：{description}", parameters, risk, not read_only,
+                          lambda arguments, remote=remote_name: self._call_github(client, remote, arguments))
+
+    @staticmethod
+    def _call_github(client: GithubMcpClient, name: str, arguments: Dict[str, Any]) -> str:
+        try:
+            return client.call_tool(name, arguments)
+        except GithubMcpError as exc:
+            raise ToolError(str(exc)) from exc
 
     def register(self, name: str, description: str, parameters: Dict[str, Any], risk: str,
                  approval_required: bool, handler: Callable[[Dict[str, Any]], str]) -> None:
