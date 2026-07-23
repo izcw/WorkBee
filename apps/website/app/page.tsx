@@ -102,7 +102,7 @@ export default function Home() {
       </article>
       <article className="feature-card model-card" id="models">
         <div className="card-copy"><span>06 · 自定义模型接入</span><h3>模型由你选择，<br />AIvra 负责组织协作。</h3><p>AIvra 不内置大模型。通过自己的 API 配置连接外部模型服务，并根据对话、任务或工作步骤选择合适的模型。模型凭证与使用方式始终由你掌控。</p></div>
-        <div className="model-demo model-selector"><div className="model-input-ghost">告诉 AIvra 要推进的目标，或开始一个任务 <b>↑</b></div><div className="model-menu"><div className="model-option selected"><strong>你的主要模型</strong><span>适合规划、对话与复杂任务</span><i>✓</i></div><div className="model-option"><strong>快速模型</strong><span>适合日常问答与即时响应</span></div><div className="model-option"><strong>专用模型</strong><span>为指定角色或工作步骤配置</span></div><div className="model-length"><b>任务上下文</b><span>由你控制　›</span></div></div></div>
+        <div className="model-demo model-selector"><div className="model-settings-head"><span>设置 · 模型</span><button>＋ 添加模型</button></div><div className="model-config-list"><div><i>API</i><span><strong>主要模型</strong><small>OpenAI-compatible · 已配置</small></span><b>编辑</b></div><div><i>API</i><span><strong>快速模型</strong><small>OpenAI-compatible · 已配置</small></span><b>编辑</b></div></div><div className="model-role-route"><img src="/team/aivra-default.png" alt="" /><span>Aivra</span><i>→</i><b>主要模型</b><small>角色可在团队设置中选择已添加的模型</small></div></div>
       </article>
     </section>
 
@@ -131,6 +131,6 @@ export default function Home() {
       </div>
     </section>
 
-    <footer><div><a className="logo" href="#top">AIvra</a><p>组建团队，连接知识，推进任务。</p></div><div><strong>产品</strong><a href="#product">功能</a><a href="#team">数字团队</a><a href="#download">下载</a></div><div><strong>平台</strong><a href={downloadUrl}>macOS</a><a href={downloadUrl}>Windows</a><a href={downloadUrl}>GitHub</a></div><span>© 2026 AIvra</span></footer>
+    <footer><div className="footer-brand"><a className="logo" href="#top">AIvra</a><p>组建团队，连接知识，推进任务。</p><small>© 2026 AIvra. All Rights Reserved.<br />本地优先的桌面 AI 工作空间。</small></div><div><strong>产品</strong><a href="#product">产品概览</a><a href="#features">核心能力</a><a href="#models">模型接入</a><a href="#download">下载</a></div><div><strong>功能</strong><a href="#team">数字团队</a><a href="#relations">协作关系</a><a href="#features">知识与流程</a></div><div><strong>关于</strong><a href={downloadUrl}>GitHub</a><a href="#download">桌面端</a><a href="#top">返回顶部</a></div><span className="footer-legal">© 2026 AIvra</span></footer>
   </main>;
 }
