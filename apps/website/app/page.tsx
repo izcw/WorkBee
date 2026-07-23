@@ -64,6 +64,9 @@ export default function Home() {
       <h2>为每项工作，组建专属数字团队</h2>
       <p>把角色、技能、知识库和项目放进同一个桌面工作空间。<br />从一次对话开始，让信息沉淀为可分派、可追踪、可继续推进的工作。</p>
       <div className="hero-actions"><DownloadButton /></div>
+    </section>
+
+    <section className="product-showcase" aria-labelledby="product-showcase-title">
       <div className="hero-product-heading"><h2>你的智能工作团队</h2><p>把任务、文件、协作与执行集中在一个安静的空间里。</p></div>
       <div className="hero-product"><img src="/product/aivra-desktop.png" alt="AIvra Desktop 产品界面" /></div>
     </section>
