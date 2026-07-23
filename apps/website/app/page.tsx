@@ -103,6 +103,15 @@ export default function Home() {
       </article>
     </section>
 
+    <section className="agent-spotlight" aria-labelledby="agent-spotlight-title">
+      <div className="spotlight-copy"><span>AIvra Agent</span><h2 id="agent-spotlight-title">把目标交给团队，<br />让每一步都有专长。</h2><p>AIvra 统筹你的工作目标，把研究、设计、实现与交付交给合适的角色。每个 Agent 都带着自己的技能、知识与工作上下文。</p><a href="#team">认识你的团队 <b>↓</b></a><div className="spotlight-index" aria-hidden="true"><i /><i className="active" /><i /><i /><i /></div></div>
+      <div className="spotlight-stage" aria-label="Agent 协作示例">
+        <article className="spotlight-card research-card"><div className="spotlight-card-head"><img src="/team/sage.png" alt="" /><span>Sage · 资料研究</span><b>处理中</b></div><h3>用户研究摘要</h3><p>已整理 128 条反馈，并标记 3 个高优先级机会。</p><div className="research-lines"><i /><i /><i /><i /></div></article>
+        <article className="spotlight-card plan-card"><div className="spotlight-card-head"><img src="/team/aivra-default.png" alt="" /><span>Aivra · 团队统筹</span><b>进行中</b></div><h3>发布计划</h3><div className="plan-list"><p><i>✓</i> 汇总目标与约束</p><p><i>✓</i> 分派研究与设计</p><p className="current"><i>3</i> 生成发布清单</p></div></article>
+        <article className="spotlight-card build-card"><div className="spotlight-card-head"><img src="/team/nova.png" alt="" /><span>Nova · 软件工程</span><b>待确认</b></div><h3>实现建议</h3><div className="code-lines"><i /><i /><i /><i /><i /></div><small>变更将在确认后执行</small></article>
+      </div>
+    </section>
+
     <section className="team-section" id="team">
       <div className="team-copy"><span className="section-label">你的 AIvra 团队</span><h2>角色由你定义，团队按需生长。</h2><p>从职责、描述、技能到专属知识库，每个角色都可自由创建和调整。先用默认角色开始，再把团队塑造成你的工作方法。</p></div>
       <div className="agent-marquee"><div className="pixel-dissolve pixel-left" aria-hidden="true">{Array.from({length:96},(_,i)=><i key={i}/>)}</div><div className="pixel-dissolve pixel-right" aria-hidden="true">{Array.from({length:96},(_,i)=><i key={i}/>)}</div><div className="agent-track">{[...agents,...agents,...agents].map((agent, i) => <article key={`${agent.name}-${i}`} aria-hidden={i>=agents.length}><div className="agent-card-inner"><div className="agent-front"><span className="agent-speech">{agent.role}</span><img src={agent.image} alt={i<agents.length ? `${agent.name} 头像` : ""} /><h3>{agent.name}</h3><p>{agent.role}</p></div><div className="agent-back"><small>{agent.role}</small><h3>{agent.name}</h3><p>{agent.desc}</p><strong>技能</strong><div className="agent-tags">{agent.skills.map(x=><span key={x}>{x}</span>)}</div><strong>知识库</strong><div className="agent-tags">{agent.knowledge.map(x=><span key={x}>{x}</span>)}</div></div></div></article>)}</div></div>
