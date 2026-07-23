@@ -3,7 +3,7 @@ import { InteractiveDigits } from "./InteractiveDigits";
 import { NetworkGraph } from "./NetworkGraph";
 import { KnowledgeGraph } from "./KnowledgeGraph";
 
-const downloadUrl = "https://github.com/izcw";
+const downloadUrl = "https://github.com/izcw/Aivra-Agent/releases";
 
 const agents = [
   { name: "Aivra", role: "全能统筹 Agent", image: "/team/aivra-default.png", desc: "负责拆解目标、分派任务，并协调团队成员持续推进项目。", skills: ["任务拆解", "团队统筹"], knowledge: ["工作准则", "交付手册"] },
