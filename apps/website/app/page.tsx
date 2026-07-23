@@ -102,7 +102,7 @@ export default function Home() {
       </article>
       <article className="feature-card model-card" id="models">
         <div className="card-copy"><span>06 · 自定义模型接入</span><h3>模型由你选择，<br />AIvra 负责组织协作。</h3><p>AIvra 不内置大模型。通过自己的 API 配置连接外部模型服务，并根据对话、任务或工作步骤选择合适的模型。模型凭证与使用方式始终由你掌控。</p></div>
-        <div className="model-demo"><div className="model-head"><span>模型服务</span><button>＋ 添加服务</button></div><div className="model-row active"><i>API</i><div><strong>主要模型</strong><small>自定义接口 · 已连接</small></div><b>默认</b></div><div className="model-row"><i>API</i><div><strong>快速模型</strong><small>自定义接口 · 已连接</small></div><b>任务</b></div><div className="model-route"><span>对话</span><i />主要模型<i /><span>步骤 03</span><i />快速模型</div><small>不同对话、角色和步骤可选择不同模型</small></div>
+        <div className="model-demo model-selector"><div className="model-input-ghost">告诉 AIvra 要推进的目标，或开始一个任务 <b>↑</b></div><div className="model-menu"><div className="model-option selected"><strong>你的主要模型</strong><span>适合规划、对话与复杂任务</span><i>✓</i></div><div className="model-option"><strong>快速模型</strong><span>适合日常问答与即时响应</span></div><div className="model-option"><strong>专用模型</strong><span>为指定角色或工作步骤配置</span></div><div className="model-length"><b>任务上下文</b><span>由你控制　›</span></div></div></div>
       </article>
     </section>
 
