@@ -6,9 +6,11 @@ import { KnowledgeGraph } from "./KnowledgeGraph";
 const downloadUrl = "https://github.com/izcw";
 
 const agents = [
-  { name: "Aivra", role: "团队负责人", image: "/team/aivra.png", desc: "负责拆解目标、分派任务，并协调团队成员持续推进项目。", skills: ["分派任务", "管理团队"], knowledge: ["管理手册", "流程执行手册"] },
-  { name: "Ava", role: "招聘分析", image: "/team/ava.png", desc: "筛选候选人、匹配岗位技能，并将复杂信息整理成评估结论。", skills: ["简历分析", "信息聚合"], knowledge: ["岗位要求", "招聘标准"] },
-  { name: "Emma", role: "资料研究", image: "/team/emma.png", desc: "收集资料、核对信息并提炼重点，为团队提供可靠的研究支持。", skills: ["资料检索", "内容整理"], knowledge: ["项目资料", "研究方法"] },
+  { name: "Aivra", role: "全能统筹 Agent", image: "/team/aivra-default.png", desc: "负责拆解目标、分派任务，并协调团队成员持续推进项目。", skills: ["任务拆解", "团队统筹"], knowledge: ["工作准则", "交付手册"] },
+  { name: "Nova", role: "软件工程 Agent", image: "/team/nova.png", desc: "将需求转化为可靠的实现方案，处理代码、验证与交付细节。", skills: ["软件开发", "问题排查"], knowledge: ["工程实践", "质量基线"] },
+  { name: "Mira", role: "产品设计 Agent", image: "/team/mira.png", desc: "梳理用户路径与产品结构，把想法打磨成可验证的体验方案。", skills: ["产品设计", "体验规划"], knowledge: ["设计规范", "产品指南"] },
+  { name: "Sage", role: "研究文档 Agent", image: "/team/sage.png", desc: "收集资料、核对信息并提炼重点，为团队提供可靠的研究支持。", skills: ["资料研究", "文档整理"], knowledge: ["研究方法", "证据手册"] },
+  { name: "Lyra", role: "运营内容 Agent", image: "/team/lyra.png", desc: "规划内容与推进节奏，把团队成果清晰地传递到合适的场景。", skills: ["内容策划", "运营推进"], knowledge: ["运营手册", "活动执行"] },
 ];
 
 function ProductShell({ compact = false }: { compact?: boolean }) {
@@ -62,11 +64,7 @@ export default function Home() {
       <div className="hero-kicker"><span>本地优先的 AI 工作空间</span><i /> <span>你的团队，按你的方式工作</span></div>
       <h2>为每项工作，组建专属数字团队</h2>
       <p>把角色、技能、知识库和项目放进同一个桌面工作空间。<br />从一次对话开始，让信息沉淀为可分派、可追踪、可继续推进的工作。</p>
-      <div className="hero-actions">
-        <DownloadButton />
-        <a className="text-link" href="#product">了解如何协作 <span>↓</span></a>
-      </div>
-      <div className="trust-row" aria-label="AIvra 产品承诺"><span><b>本地优先</b> 工作内容默认留在你的设备</span><span><b>明确控制</b> 重要执行先由你确认</span><span><b>持续可见</b> 过程与结果留在项目脉络中</span></div>
+      <div className="hero-actions"><DownloadButton /></div>
       <div className="hero-product-heading"><h2>你的智能工作团队</h2><p>把任务、文件、协作与执行集中在一个安静的空间里。</p></div>
       <div className="hero-product"><img src="/product/aivra-desktop.png" alt="AIvra Desktop 产品界面" /></div>
     </section>
