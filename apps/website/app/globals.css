@@ -269,3 +269,14 @@ main{display:flex;flex-direction:column}main>.site-header{order:0}main>.hero{ord
 .quote-section{padding:var(--section-gap) var(--section-gutter)!important;margin-bottom:var(--section-gap)!important}.quote-section p,.quote-section>span{display:block;width:min(var(--section-width),100%);margin-left:auto;margin-right:auto}
 .download{padding:0!important;margin-bottom:var(--section-gap)!important}
 @media(max-width:800px){:root{--section-gutter:20px;--section-gap:72px}.product-showcase{padding:var(--section-gap) 0!important}.intro#product{padding:62px 25px!important}.quote-section{padding:var(--section-gap) var(--section-gutter)!important}}
+
+/* The former product explainer is intentionally removed from the page flow. */
+#product,.site-header nav a[href="#product"]{display:none!important}
+
+/* Dark feature and quote surfaces share the footer's quiet, layered finish. */
+.feature-grid{padding:32px!important;border-radius:32px;background:radial-gradient(circle at 8% 102%,#2a2a2d 0,transparent 32%),linear-gradient(135deg,#050506,#0d0d0f)!important}
+.feature-card.dark-card,.feature-card.always-on-card{background:linear-gradient(145deg,#17171a,#0d0d0f)!important;border-color:#2a2a2f!important;color:#fff!important;box-shadow:0 20px 52px rgba(0,0,0,.3)}
+.feature-card.dark-card .card-copy>span,.feature-card.always-on-card .card-copy>span{color:#b6b6c5!important}.feature-card.dark-card .card-copy p,.feature-card.always-on-card .card-copy p{color:#a9a9b3!important}
+.feature-card.dark-card .progress-board,.feature-card.always-on-card .schedule-demo{background:#202025!important;border-color:#35353c!important}.feature-card.dark-card .progress-meter{background:#393941}.feature-card.dark-card .progress-timeline>div:before,.feature-card.dark-card .task-demo>div,.feature-card.always-on-card .schedule-row{border-color:#34343b!important}
+.quote-section{background:radial-gradient(circle at 8% 102%,#2a2a2d 0,transparent 32%),linear-gradient(135deg,#050506,#0d0d0f)!important}.quote-section span{color:#a7a7b1!important}
+@media(max-width:800px){.feature-grid{padding:12px!important;border-radius:22px}}
