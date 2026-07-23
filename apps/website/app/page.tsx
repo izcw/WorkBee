@@ -61,7 +61,6 @@ export default function Home() {
       <div className="hero-mask mask-a" aria-hidden="true" /><div className="hero-mask mask-b" aria-hidden="true" /><div className="hero-mask mask-c" aria-hidden="true" />
       <img className="hero-avatar" src="/team/aivra.png" alt="AIvra" />
       <h1>AIvra Team</h1>
-      <div className="hero-kicker"><span>本地优先的 AI 工作空间</span><i /> <span>你的团队，按你的方式工作</span></div>
       <h2>为每项工作，组建专属数字团队</h2>
       <p>把角色、技能、知识库和项目放进同一个桌面工作空间。<br />从一次对话开始，让信息沉淀为可分派、可追踪、可继续推进的工作。</p>
       <div className="hero-actions"><DownloadButton /></div>
