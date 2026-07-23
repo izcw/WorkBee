@@ -287,3 +287,6 @@ main{display:flex;flex-direction:column}main>.site-header{order:0}main>.hero{ord
 /* Keep the grid transparent: only the two named cards use the dark treatment. */
 :root{--section-width:1180px}
 .feature-grid{padding:0!important;border-radius:0!important;background:transparent!important}
+
+/* Keep the interactive number field on a neutral white canvas. */
+.hero{background:#fff!important}
