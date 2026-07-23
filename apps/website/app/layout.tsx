@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AIvra Team — 自定义你的智能体团队",
-  description: "在一个桌面工作空间中创建角色、连接技能与知识库，让智能体团队协作推进对话、任务和项目。",
+  title: "AIvra Team｜为每项工作，组建专属数字团队",
+  description: "AIvra 是本地优先的桌面 AI 工作空间。创建角色、连接知识、组织流程，让团队持续推进每一次对话与任务。",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

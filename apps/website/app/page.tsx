@@ -59,11 +59,14 @@ export default function Home() {
       <div className="hero-mask mask-a" aria-hidden="true" /><div className="hero-mask mask-b" aria-hidden="true" /><div className="hero-mask mask-c" aria-hidden="true" />
       <img className="hero-avatar" src="/team/aivra.png" alt="AIvra" />
       <h1>AIvra Team</h1>
+      <div className="hero-kicker"><span>本地优先的 AI 工作空间</span><i /> <span>你的团队，按你的方式工作</span></div>
       <h2>为每项工作，组建专属数字团队</h2>
-      <p>把角色、技能、知识库和项目放进同一个桌面工作空间。<br />每一次对话都能调用合适的团队成员，让信息直接成为可继续推进的工作。</p>
+      <p>把角色、技能、知识库和项目放进同一个桌面工作空间。<br />从一次对话开始，让信息沉淀为可分派、可追踪、可继续推进的工作。</p>
       <div className="hero-actions">
         <DownloadButton />
+        <a className="text-link" href="#product">了解如何协作 <span>↓</span></a>
       </div>
+      <div className="trust-row" aria-label="AIvra 产品承诺"><span><b>本地优先</b> 工作内容默认留在你的设备</span><span><b>明确控制</b> 重要执行先由你确认</span><span><b>持续可见</b> 过程与结果留在项目脉络中</span></div>
       <div className="hero-product-heading"><h2>你的智能工作团队</h2><p>把任务、文件、协作与执行集中在一个安静的空间里。</p></div>
       <div className="hero-product"><img src="/product/aivra-desktop.png" alt="AIvra Desktop 产品界面" /></div>
     </section>
@@ -71,14 +74,14 @@ export default function Home() {
     <section className="intro" id="product">
       <span className="section-label">从角色到执行，保持连接</span>
       <h2>让角色、知识和流程<br />在同一个项目里协作。</h2>
-      <p>为项目选择合适的角色，连接专属知识库，并用可编辑步骤组织执行过程。AIvra 让每次对话都能延续已有背景，也能进一步成为清晰的任务。</p>
+      <p>为项目选择合适的角色，连接专属知识库，并用可编辑步骤组织执行过程。AIvra 让每次对话都承接已有背景，并自然延展为下一步行动。</p>
     </section>
 
     <section className="relation-section product-relation" id="relations"><div className="relation-copy"><span className="section-label">协作关系谱</span><h3>角色不是孤立的聊天对象。</h3><p>技能决定角色能做什么，知识库提供执行依据，团队负责人将不同角色连接到同一个项目目标。</p></div><NetworkGraph /></section>
 
     <section className="feature-grid" id="features">
       <article className="feature-card feature-large">
-        <div className="card-copy"><span>01 · 对话与任务</span><h3>同一个输入框，<br />切换两种工作方式。</h3><p>使用“对话”快速讨论、补充信息和探索思路；切换到“任务”后，让选定角色按权限与步骤执行具体工作。</p></div>
+        <div className="card-copy"><span>01 · 对话与任务</span><h3>从想法到行动，<br />不必离开同一个上下文。</h3><p>使用“对话”快速讨论、补充信息和探索思路；切换到“任务”后，让选定角色按权限与步骤执行具体工作。</p></div>
         <div className="mode-demo"><div className="mode-tabs"><span className="active">对话</span><span>任务</span></div><div className="mode-input"><p>分析这些候选人简历，并找出与岗位最匹配的人选。</p><div><span>＋ 选择文件</span><span>◎ 选择角色</span><b>发送</b></div></div><div className="mode-note"><i>对话</i><span>适合询问、讨论和补充上下文</span><i>任务</i><span>适合调用角色能力并执行工作</span></div></div>
       </article>
       <article className="feature-card">
@@ -104,14 +107,14 @@ export default function Home() {
     </section>
 
     <section className="team-section" id="team">
-      <div className="team-copy"><span className="section-label">你的 AIvra 团队</span><h2>角色由你定义，团队按需生长。</h2><p>从职责、描述、技能到专属知识库，每个角色都可以自由创建和调整。你也可以直接使用 AIvra 提供的默认角色，快速开始工作。</p></div>
+      <div className="team-copy"><span className="section-label">你的 AIvra 团队</span><h2>角色由你定义，团队按需生长。</h2><p>从职责、描述、技能到专属知识库，每个角色都可自由创建和调整。先用默认角色开始，再把团队塑造成你的工作方法。</p></div>
       <div className="agent-marquee"><div className="pixel-dissolve pixel-left" aria-hidden="true">{Array.from({length:96},(_,i)=><i key={i}/>)}</div><div className="pixel-dissolve pixel-right" aria-hidden="true">{Array.from({length:96},(_,i)=><i key={i}/>)}</div><div className="agent-track">{[...agents,...agents,...agents].map((agent, i) => <article key={`${agent.name}-${i}`} aria-hidden={i>=agents.length}><div className="agent-card-inner"><div className="agent-front"><span className="agent-speech">{agent.role}</span><img src={agent.image} alt={i<agents.length ? `${agent.name} 头像` : ""} /><h3>{agent.name}</h3><p>{agent.role}</p></div><div className="agent-back"><small>{agent.role}</small><h3>{agent.name}</h3><p>{agent.desc}</p><strong>技能</strong><div className="agent-tags">{agent.skills.map(x=><span key={x}>{x}</span>)}</div><strong>知识库</strong><div className="agent-tags">{agent.knowledge.map(x=><span key={x}>{x}</span>)}</div></div></div></article>)}</div></div>
     </section>
 
-    <section className="quote-section"><p>角色负责专长，知识提供依据，<br />流程让团队真正协作起来。</p><span>Build your own AIvra Team</span></section>
+    <section className="quote-section"><p>角色负责专长，知识提供依据，<br />流程让团队真正协作起来。</p><span>Build your own AIvra Team</span><div className="quote-orbit" aria-hidden="true"><i /><i /><i /><b>AI</b></div></section>
 
     <section className="download" id="download">
-      <div className="download-copy"><span className="section-label">开始使用 AIvra</span><h2>把下一件事，<br />交给 AIvra。</h2><p>免费下载桌面端。安装完成后，你的数字团队就已准备就绪。</p></div>
+      <div className="download-copy"><span className="section-label">开始使用 AIvra</span><h2>把下一件事，<br />交给 AIvra。</h2><p>免费下载桌面端。安装完成后，先定义团队，再决定它如何与你一起工作。</p></div>
       <div className="download-buttons">
         <a href={downloadUrl}><img className="download-icon" src="/icon/apple.png" alt="" /><div><small>下载适用于</small><strong>macOS</strong><span>Apple 芯片 · macOS 12+</span></div></a>
         <a href={downloadUrl}><img className="download-icon" src="/icon/windows.png" alt="" /><div><small>下载适用于</small><strong>Windows</strong><span>64 位 · Windows 10+</span></div></a>
