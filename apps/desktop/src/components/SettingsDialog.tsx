@@ -6,9 +6,9 @@ import { ModalDialog } from './ModalDialog';
 
 type Section = 'profile' | 'general' | 'models';
 
-export function SettingsDialog({ close }: { close: () => void }) {
+export function SettingsDialog({ close, initialSection = 'profile' }: { close: () => void; initialSection?: Section }) {
   const { models, usage, createModel, updateModel, deleteModel, testModel } = useAgent();
-  const [section, setSection] = useState<Section>('profile');
+  const [section, setSection] = useState<Section>(initialSection);
   const [editingId, setEditingId] = useState<string | null>(models[0]?.id || null);
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -21,6 +21,7 @@ export function SettingsDialog({ close }: { close: () => void }) {
   const [testResult, setTestResult] = useState('');
 
   const editing = models.find(item => item.id === editingId);
+  useEffect(() => { setSection(initialSection); }, [initialSection]);
   useEffect(() => {
     if (!editing) return;
     setName(editing.name); setBaseUrl(editing.baseUrl); setModel(editing.model);

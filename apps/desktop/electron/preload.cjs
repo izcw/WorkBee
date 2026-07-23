@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('aivraDesktop', {
   roles: {
     list: () => ipcRenderer.invoke('roles:list'),
     save: input => ipcRenderer.invoke('roles:save', input),
+    delete: roleId => ipcRenderer.invoke('roles:delete', roleId),
   },
   plugins: {
     githubStatus: () => ipcRenderer.invoke('plugins:github-status'),

@@ -1,4 +1,4 @@
-import { Clock } from 'lucide-react';
+import { Clock, Plus } from 'lucide-react';
 import type { PageId } from '../types';
 import { Composer } from '../components/Composer';
 import { Avatar, Card } from '../components/ui';
@@ -18,7 +18,8 @@ function formatRecentDate(value?: string) {
 }
 
 export function HomePage({ onNavigate }: { onNavigate: (page: PageId) => void }) {
-  const { draft, setDraft, roles, selectedRoleId, selectedRoleIds, selectRole, createProject, approvalMode, setApprovalMode, projects, projectThreads, openProject, openThread } = useAgent();
+  const { draft, setDraft, roles, models, selectedRoleId, selectedRoleIds, selectRole, createProject, approvalMode, setApprovalMode, projects, projectThreads, openProject, openThread } = useAgent();
+  const needsModel = models.length === 0 || (models.length === 1 && models[0].id === 'deepseek-default' && !models[0].keyAvailable);
   const latestThreads = new Map<string, ThreadSummary>();
   projectThreads.forEach(thread => {
     const current = latestThreads.get(thread.workspace_id);
@@ -37,6 +38,7 @@ export function HomePage({ onNavigate }: { onNavigate: (page: PageId) => void })
   };
   return <div className="home-page">
     <section className="welcome"><Avatar image={aivraAvatar} size={76} /><div><h1>Aivra</h1><p><strong>Aivra</strong> 团队随时在线</p></div></section>
+    {needsModel && <section className="card" style={{ marginBottom: 18, padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}><span>请添加模型后开始使用 Aivra。</span><button className="button" onClick={() => window.dispatchEvent(new Event('aivra:open-settings-models'))}><Plus size={14}/>添加模型</button></section>}
     <Composer value={draft} onChange={setDraft} onSubmit={value => { createProject(value).then(() => onNavigate('chat')).catch(() => onNavigate('chat')); }} roles={roles} selectedRoleId={selectedRoleId} selectedRoleIds={selectedRoleIds} onRoleChange={selectRole} approvalMode={approvalMode} onApprovalModeChange={setApprovalMode}/>
     <section className="recent"><h2>最近项目</h2><div className="project-grid">
       {recentProjects.length === 0 && <p className="recent-empty">暂无最近项目</p>}

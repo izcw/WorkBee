@@ -138,6 +138,7 @@ export function AppLayout({ page, onNavigate, children, right, marketView, onMar
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<'profile' | 'general' | 'models'>('profile');
   const [terminalOpen, setTerminalOpen] = useState(false);
   const isMac = window.aivraDesktop?.platform === 'darwin';
   useEffect(() => {
@@ -148,6 +149,11 @@ export function AppLayout({ page, onNavigate, children, right, marketView, onMar
     addEventListener('aivra:open-right-panel', openRightPanel);
     return () => removeEventListener('aivra:open-right-panel', openRightPanel);
   }, []);
+  useEffect(() => {
+    const openModelSettings = () => { setSettingsSection('models'); setSettingsOpen(true); };
+    addEventListener('aivra:open-settings-models', openModelSettings);
+    return () => removeEventListener('aivra:open-settings-models', openModelSettings);
+  }, []);
   return <div className={`app-shell platform-${isMac ? 'darwin' : 'windows'} ${right ? 'has-right' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${rightCollapsed ? 'right-collapsed' : ''}`}>
     <header className="drag-region">
       <button className="drag-control drag-left" onClick={() => setSidebarCollapsed(value => !value)} aria-label={sidebarCollapsed ? '展开左侧栏' : '隐藏左侧栏'}>{sidebarCollapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}</button>
@@ -156,9 +162,9 @@ export function AppLayout({ page, onNavigate, children, right, marketView, onMar
       {right && <>{page === 'chat' && <button className="drag-control drag-terminal" onClick={() => setTerminalOpen(value => !value)} aria-label={terminalOpen ? '关闭终端' : '打开终端'}>{terminalOpen ? <PanelBottom size={17}/> : <Terminal size={17}/>}</button>}<button className="drag-control drag-right" onClick={() => setRightCollapsed(value => !value)} aria-label={rightCollapsed ? '展开右侧栏' : '隐藏右侧栏'}>{rightCollapsed ? <PanelRightOpen size={17}/> : <PanelRightClose size={17}/>}</button></>}
       {!isMac && <div className="window-controls" aria-label="Window controls"><button title="Minimize" aria-label="Minimize" onClick={() => void window.aivraDesktop?.window.minimize()}><Minus size={16}/></button><button title="Maximize" aria-label="Maximize" onClick={() => void window.aivraDesktop?.window.maximize()}><Square size={14}/></button><button className="close" title="Close" aria-label="Close" onClick={() => void window.aivraDesktop?.window.close()}><X size={16}/></button></div>}
     </header>
-    {!sidebarCollapsed && <Sidebar page={page} onNavigate={onNavigate} openSettings={() => setSettingsOpen(true)}/>}
+    {!sidebarCollapsed && <Sidebar page={page} onNavigate={onNavigate} openSettings={() => { setSettingsSection('profile'); setSettingsOpen(true); }}/>}
     <main className="workspace">{children}{terminalOpen && <TerminalPanel workspace={workspace} close={() => setTerminalOpen(false)}/>}</main>
     {right && <aside className={`right-panel ${page === 'chat' ? 'chat-right-panel' : ''}`} aria-hidden={rightCollapsed}>{right}</aside>}
-    {settingsOpen && <SettingsDialog close={() => setSettingsOpen(false)}/>}
+    {settingsOpen && <SettingsDialog initialSection={settingsSection} close={() => setSettingsOpen(false)}/>}
   </div>;
 }

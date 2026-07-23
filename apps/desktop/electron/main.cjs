@@ -261,6 +261,11 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     await agentManager.restart();
     return saved;
   });
+  ipcMain.handle('roles:delete', async (_event, roleId) => {
+    const result = await roleStore.delete(requireString(roleId, 'roleId', 128));
+    if (result.deleted) await agentManager.restart();
+    return result;
+  });
   createWindow();
   agentManager.start().catch(error => console.error(`[agent] ${error.message}`));
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());

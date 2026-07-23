@@ -56,14 +56,19 @@
     "mac": {
       "icon": "electron/Aivra.png",
       "category": "public.app-category.productivity",
-      "target": [
-        "dmg",
-        "zip"
-      ]
+      "target": "dmg",
+      "artifactName": "Aivra-Agent-v${version}-macos-${arch}.${ext}"
     },
     "win": {
       "icon": "electron/Aivra.png",
-      "target": "nsis"
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "artifactName": "Aivra-Agent-v${version}-windows-portable.${ext}"
+    },
+    "nsis": {
+      "artifactName": "Aivra-Agent-Setup-v${version}-windows-${arch}.${ext}"
     },
     "linux": {
       "icon": "electron/Aivra.png",

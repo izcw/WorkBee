@@ -56,6 +56,7 @@ interface Window {
     roles: {
       list(): Promise<RoleConfig[]>;
       save(input: { id?: string; name?: string; role?: string; avatar?: string; modelId: string; description?: string; skills?: string[]; knowledge?: string[] }): Promise<RoleConfig>;
+      delete(roleId: string): Promise<{ deleted: boolean }>;
     };
     plugins: {
       githubStatus(): Promise<{ connected: boolean; serverUrl: string }>;

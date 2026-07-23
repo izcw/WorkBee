@@ -1,4 +1,4 @@
-import { Check, LoaderCircle, Pencil, Plus, Save, Upload, X } from 'lucide-react';
+import { Check, LoaderCircle, Pencil, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAgent } from '../agent/AgentContext';
 import { AddCard, Avatar, StatusDot } from '../components/ui';
@@ -8,7 +8,7 @@ import { FORMAT_SKILL_BY_TYPE, KNOWLEDGE_DOCUMENTS, SKILL_CATALOG } from '../dat
 import { DEFAULT_ROLE_AVATARS, roleAvatar, roleAvatarValue } from '../data/roleAvatars';
 
 function TeamSidebar() {
-  const { selectedTeamRoleId, roles, models, saveRole } = useAgent();
+  const { selectedTeamRoleId, roles, models, saveRole, deleteRole } = useAgent();
   const creating = selectedTeamRoleId === '__new__';
   const role = creating ? undefined : roles.find(item => item.id === selectedTeamRoleId) || roles[0];
   const [editing, setEditing] = useState(false);
@@ -35,6 +35,13 @@ function TeamSidebar() {
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
+  const remove = async () => {
+    if (!role || !confirm(`确定删除自定义角色“${role.name}”吗？`)) return;
+    setSaving(true); setError('');
+    try { await deleteRole(role.id); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setSaving(false); }
+  };
   const uploadAvatar = (file?: File) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) { setError('请选择图片文件'); return; }
@@ -46,7 +53,7 @@ function TeamSidebar() {
   };
   return <div className="team-detail">
     <header><Avatar image={roleAvatar({ id: role?.id || '', avatar })} size={72}/><h2>{creating ? '添加智能体' : role?.name}</h2><p>{creating ? '配置团队中的新角色' : role?.role}</p><StatusDot label={(role?.keyAvailable || models.find(item => item.id === modelId)?.keyAvailable) ? '模型已就绪' : '模型待配置'}/></header>
-    <div className="team-detail-actions">{editing ? <button className="primary" disabled={saving} onClick={save}>{saving ? <LoaderCircle size={14}/> : <Save size={14}/>}保存</button> : <button onClick={() => setEditing(true)}><Pencil size={14}/>编辑</button>}</div>
+    <div className="team-detail-actions">{editing ? <button className="primary" disabled={saving} onClick={save}>{saving ? <LoaderCircle size={14}/> : <Save size={14}/>}保存</button> : <button onClick={() => setEditing(true)}><Pencil size={14}/>编辑</button>}{role && !['aivra', 'nova', 'mira', 'sage', 'lyra'].includes(role.id) && <button className="danger" disabled={saving} onClick={remove}><Trash2 size={14}/>删除</button>}</div>
     {editing && <section className="role-identity-fields"><h3>基本信息</h3><input value={name} onChange={event => setName(event.target.value)} placeholder="角色名称"/><input value={roleTitle} onChange={event => setRoleTitle(event.target.value)} placeholder="角色职责，如：前端开发"/></section>}
     {editing && <section><h3>头像</h3><div className="avatar-picker">{DEFAULT_ROLE_AVATARS.map((image, index) => { const value = `default:${index + 1}`; return <button key={value} className={avatar === value ? 'active' : ''} onClick={() => setAvatar(value)}><img src={image} alt="默认头像"/></button>; })}<button className="avatar-upload" onClick={() => uploadRef.current?.click()}><Upload size={16}/><span>上传</span></button></div><input ref={uploadRef} className="hidden-file" type="file" accept="image/*" onChange={event => uploadAvatar(event.target.files?.[0])}/></section>}
     <section><h3>角色描述</h3>{editing ? <textarea value={description} onChange={event => setDescription(event.target.value)}/> : <p>{role?.description || '暂无描述'}</p>}</section>

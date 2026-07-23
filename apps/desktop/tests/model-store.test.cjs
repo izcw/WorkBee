@@ -44,7 +44,7 @@ test('models support CRUD and roles reference a configured model', async t => {
   assert.equal((await reloadedRoles.providersForAgent())[added.id].description, '负责内容编辑。');
 });
 
-test('legacy team data is reset once to the four default roles', async t => {
+test('legacy team data is reset once to the five default roles', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-role-migration-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   await fs.writeFile(path.join(directory, 'roles.json'), JSON.stringify([
@@ -57,7 +57,7 @@ test('legacy team data is reset once to the four default roles', async t => {
   const roles = new RoleStore(app, new ModelStore(app, secureStore));
 
   const migrated = await roles.list();
-  assert.deepEqual(migrated.map(role => role.id), ['aivra', 'nova', 'mira', 'sage']);
+  assert.deepEqual(migrated.map(role => role.id), ['aivra', 'nova', 'mira', 'sage', 'lyra']);
   assert.equal(migrated[0].name, 'Aivra');
   assert.equal(migrated[0].role, '全能统筹 Agent');
   assert.ok(migrated[0].skills.includes('软件开发与测试'));
@@ -65,12 +65,13 @@ test('legacy team data is reset once to the four default roles', async t => {
   assert.equal(migrated[1].role, '软件工程 Agent');
   assert.equal(migrated[2].role, '产品设计 Agent');
   assert.equal(migrated[3].role, '研究文档 Agent');
+  assert.equal(migrated[4].role, '运营内容 Agent');
 
   await roles.save({ name: '后续新增', role: '扩展角色', modelId: 'deepseek-default' });
-  assert.equal((await new RoleStore(app, new ModelStore(app, secureStore)).list()).length, 5);
+  assert.equal((await new RoleStore(app, new ModelStore(app, secureStore)).list()).length, 6);
 });
 
-test('version two single-role data upgrades to four defaults and keeps later custom roles', async t => {
+test('version two single-role data upgrades to five defaults and keeps later custom roles', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-role-v2-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   await fs.writeFile(path.join(directory, 'roles.json'), JSON.stringify({ version: 2, roles: [
@@ -81,10 +82,23 @@ test('version two single-role data upgrades to four defaults and keeps later cus
   const app = { getPath: () => directory };
   const migrated = await new RoleStore(app, new ModelStore(app, secureStore)).list();
 
-  assert.deepEqual(migrated.map(role => role.id), ['aivra', 'nova', 'mira', 'sage', 'custom-kept']);
+  assert.deepEqual(migrated.map(role => role.id), ['aivra', 'nova', 'mira', 'sage', 'lyra', 'custom-kept']);
   assert.equal(migrated[0].role, '全能统筹 Agent');
   assert.equal(migrated[0].avatar, 'default:5');
   assert.ok(migrated[0].skills.includes('全局规划与执行'));
+});
+
+test('default roles cannot be deleted while custom roles can', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-role-delete-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const secureStore = { getApiKey: async () => '', setApiKey: async () => undefined };
+  const app = { getPath: () => directory };
+  const roles = new RoleStore(app, new ModelStore(app, secureStore));
+
+  await assert.rejects(roles.delete('lyra'), /默认角色/);
+  const custom = await roles.save({ name: 'Custom', role: 'Custom role', modelId: 'deepseek-default' });
+  assert.deepEqual(await roles.delete(custom.id), { deleted: true });
+  assert.equal((await roles.list()).some(role => role.id === custom.id), false);
 });
 
 test('connection test uses OpenAI-compatible chat completions without exposing the key', async () => {

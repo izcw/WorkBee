@@ -25,14 +25,11 @@ npm run desktop:dev
 ## 命令
 
 ```bash
-npm run build
 npm test
-npm run agent:build
-npm run desktop:pack
 npm run desktop:dist
 ```
 
-`desktop:pack` 和 `desktop:dist` 会先重新生成 Renderer 与 PyInstaller `onedir` Agent。Electron Main 在开发环境使用 `agent/.venv`，在发布环境使用 `process.resourcesPath/agent/aivra-agent/`。
+发布时只需依次执行 `npm test` 和 `npm run desktop:dist`。`desktop:dist` 会先重新生成 Renderer 与 PyInstaller `onedir` Agent，再生成当前平台的发布包，因此无需额外执行 `build` 或 `agent:build`。Windows 构建会在 `release/` 生成安装程序和免安装 ZIP；`desktop:pack` 仅用于本地检查未安装应用目录。Electron Main 在开发环境使用 `agent/.venv`，在发布环境使用 `process.resourcesPath/agent/aivra-agent/`。
 
 ## 数据位置
 

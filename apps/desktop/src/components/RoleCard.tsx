@@ -1,4 +1,3 @@
-import { Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -17,8 +16,8 @@ type RoleCardProps = {
 function RoleDetails({ role }: { role: RoleConfig }) {
   return <div className="role-card-details">
     <div className="role-card-detail-section"><h4>模型</h4><div className="role-model-summary"><small>{role.model}</small></div></div>
-    <div className="role-card-detail-section"><h4>技能引用</h4><div className="detail-tags">{role.skills?.length ? role.skills.map(item => <span key={item}><Check size={11}/>{item}</span>) : <p>暂无技能</p>}</div></div>
-    <div className="role-card-detail-section"><h4>知识库引用</h4><div className="knowledge-list">{role.knowledge?.length ? role.knowledge.map(reference => { const item = KNOWLEDGE_DOCUMENTS.find(document => document.id === reference || document.name === reference); return <span key={reference}>{item?.name || reference}</span>; }) : <p>暂无引用</p>}</div></div>
+    <div className="role-card-detail-section"><h4>技能引用</h4><div className="role-reference-text">{role.skills?.length ? <><span className="role-reference-items">{role.skills.slice(0, 2).map(item => <span key={item}>{item}</span>)}</span>{role.skills.length > 2 && <span className="role-reference-overflow">+{role.skills.length - 2}</span>}</> : <p>暂无技能</p>}</div></div>
+    <div className="role-card-detail-section"><h4>知识库引用</h4><div className="role-reference-text">{role.knowledge?.length ? <><span className="role-reference-items">{role.knowledge.slice(0, 2).map(reference => { const item = KNOWLEDGE_DOCUMENTS.find(document => document.id === reference || document.name === reference); return <span key={reference}>{item?.name || reference}</span>; })}</span>{role.knowledge.length > 2 && <span className="role-reference-overflow">+{role.knowledge.length - 2}</span>}</> : <p>暂无引用</p>}</div></div>
   </div>;
 }
 
