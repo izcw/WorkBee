@@ -7,6 +7,7 @@ const DEFAULT_MODEL = {
   name: 'DeepSeek',
   baseUrl: 'https://api.deepseek.com',
   model: 'deepseek-v4-flash',
+  purpose: 'chat',
 };
 
 function validateModel(input, current = {}) {
@@ -14,12 +15,15 @@ function validateModel(input, current = {}) {
   const name = String(input.name ?? current.name ?? '').trim();
   const baseUrl = String(input.baseUrl ?? current.baseUrl ?? '').trim().replace(/\/$/, '');
   const model = String(input.model ?? current.model ?? '').trim();
+  const purpose = input.purpose === undefined
+    ? (current.purpose === 'embedding' ? 'embedding' : 'chat')
+    : input.purpose === 'embedding' ? 'embedding' : 'chat';
   let parsed;
   try { parsed = new URL(baseUrl); } catch { throw new Error('Base URL 必须是有效的 HTTP(S) 地址'); }
   if (!name || name.length > 80) throw new Error('模型名称无效');
   if (!['http:', 'https:'].includes(parsed.protocol) || baseUrl.length > 500) throw new Error('Base URL 必须是有效的 HTTP(S) 地址');
   if (!model || model.length > 200) throw new Error('Model 参数无效');
-  return { name, baseUrl, model };
+  return { name, baseUrl, model, purpose };
 }
 
 function maskKey(value) {
@@ -97,7 +101,10 @@ class ModelStore {
 
   async delete(id) {
     const models = await this._read();
-    if (models.length <= 1) throw new Error('至少需要保留一个模型');
+    const target = models.find(model => model.id === id);
+    if (target?.purpose !== 'embedding' && models.filter(model => model.purpose !== 'embedding' && model.id !== id).length === 0) {
+      throw new Error('至少需要保留一个对话模型');
+    }
     const next = models.filter(model => model.id !== id);
     if (next.length === models.length) throw new Error('模型不存在');
     await this._write(next);
@@ -109,6 +116,11 @@ class ModelStore {
     const model = await this.get(id);
     if (!model) return null;
     return { ...model, apiKey: await this._key(id) };
+  }
+
+  async embeddingProvider() {
+    const model = (await this._read()).find(item => item.purpose === 'embedding');
+    return model ? { ...model, apiKey: await this._key(model.id) } : null;
   }
 }
 

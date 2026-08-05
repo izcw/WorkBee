@@ -7,7 +7,7 @@ import { roleAvatar } from '../data/roleAvatars';
 import { SKILL_CATALOG, KNOWLEDGE_DOCUMENTS } from '../data/catalog';
 import { PLUGIN_CATALOG } from '../pages/MarketPage';
 
-const fallbackRoles: RoleConfig[] = [{ id: 'aivra', name: 'Aivra', role: '全能统筹 Agent', modelId: 'deepseek-default', modelName: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', keyAvailable: false, description: '统筹并完成开发、工作、设计与文件处理。', skills: ['全局规划与执行', '文件读写与整理', '软件开发与测试'], knowledge: ['aivra-working-principles', 'planning-delivery-playbook'] }];
+const fallbackRoles: RoleConfig[] = [{ id: 'aivra', name: 'BeeYo', role: '全能统筹 Agent', modelId: 'deepseek-default', modelName: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', keyAvailable: false, description: '统筹并完成开发、工作、设计与文件处理。', skills: ['全局规划与执行', '文件读写与整理', '软件开发与测试'], knowledge: ['aivra-working-principles', 'planning-delivery-playbook'] }];
 type MentionItem = { id: string; label: string; category: '插件' | '技能' | '文档'; description: string };
 type MentionPosition = { left: number; top: number; width: number; maxHeight: number; placement: 'above' | 'below' };
 

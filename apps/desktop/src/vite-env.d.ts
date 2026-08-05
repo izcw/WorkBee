@@ -15,9 +15,11 @@ type AgentEvent = {
 type Workspace = { id: string; path: string; name: string; created_at?: string; last_opened_at?: string; thread_count?: number };
 type FileTreeNode = { name: string; path: string; type: 'file' | 'directory'; children?: FileTreeNode[] };
 type UsageSummary = { totalTokens: number; peakTokens: number; longestTaskSeconds: number; byModel: Array<{ model_id: string; model: string; input_tokens: number; output_tokens: number; total_tokens: number; conversations: number }>; daily: Array<{ date: string; tokens: number; conversations: number }> };
-type ModelConfig = { id: string; name: string; baseUrl: string; model: string; keyAvailable: boolean; maskedKey: string };
+type ModelConfig = { id: string; name: string; baseUrl: string; model: string; purpose: 'chat' | 'embedding'; keyAvailable: boolean; maskedKey: string };
 type RoleConfig = { id: string; name: string; role: string; avatar?: string; modelId: string; modelName: string; baseUrl: string; model: string; keyAvailable: boolean; description: string; skills: string[]; knowledge: string[] };
-type ModelInput = { id?: string; name: string; baseUrl: string; model: string; apiKey?: string; clearApiKey?: boolean };
+type ModelInput = { id?: string; name: string; baseUrl: string; model: string; purpose?: 'chat' | 'embedding'; apiKey?: string; clearApiKey?: boolean };
+type RecoverableRun = { id: string; thread_id: string; workspace_id: string; role_id: string; mode: 'chat' | 'task'; title: string; updated_at: string; safeToResume: boolean; phase: string };
+type McpServerConfig = { id: string; name: string; url: string; enabled: boolean; tokenAvailable: boolean };
 
 interface Window {
   aivraDesktop?: {
@@ -30,7 +32,7 @@ interface Window {
       selectWorkspace(): Promise<Workspace | null>;
       openWorkspace(workspacePath: string): Promise<void>;
       executeCommand(input: { command: string; cwd?: string }): Promise<{ stdout: string; stderr: string; code: number }>;
-      createProject(): Promise<Workspace>;
+      createProject(name?: string): Promise<Workspace>;
       listWorkspaces(): Promise<Workspace[]>;
       deleteWorkspace(workspaceId: string): Promise<{ workspaceId: string; deleted: boolean }>;
       renameWorkspace(input: { workspaceId: string; name: string }): Promise<{ workspaceId: string; name: string; updated: boolean }>;
@@ -41,6 +43,8 @@ interface Window {
       usageSummary(): Promise<UsageSummary>;
       getThread(threadId: string): Promise<ThreadDetail>;
       createRun(input: { workspaceId: string; threadId?: string; prompt: string; mode: 'chat' | 'task'; roleIds: string[]; approvalMode: 'request' | 'auto' | 'full'; workflowName?: string; documents?: string[] }): Promise<{ runId: string; threadId: string; roleIds: string[] }>;
+      listRecoverableRuns(): Promise<RecoverableRun[]>;
+      resumeRun(runId: string): Promise<{ runId: string; threadId: string; roleIds: string[] }>;
       cancelRun(runId: string): Promise<{ accepted: boolean }>;
       resolveApproval(input: { approvalId: string; approved: boolean }): Promise<{ accepted: boolean }>;
       onEvent(callback: (event: AgentEvent) => void): () => void;
@@ -63,6 +67,9 @@ interface Window {
       openGithubTokenPage(): Promise<{ opened: boolean }>;
       connectGithub(input: { token: string }): Promise<{ connected: boolean; serverUrl: string }>;
       disconnectGithub(): Promise<{ connected: boolean }>;
+      listMcpServers(): Promise<McpServerConfig[]>;
+      saveMcpServer(input: { id?: string; name: string; url: string; token?: string; enabled?: boolean }): Promise<McpServerConfig>;
+      deleteMcpServer(id: string): Promise<{ deleted: boolean }>;
     };
   };
 }

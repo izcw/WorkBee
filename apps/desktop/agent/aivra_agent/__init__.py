@@ -1,3 +1,3 @@
-"""Aivra local Agent."""
+"""WorkBee local Agent."""
 
 __version__ = "0.1.0"

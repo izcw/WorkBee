@@ -105,7 +105,7 @@ def test_deleting_threads_and_projects_removes_only_local_records(tmp_path: Path
     assert database.get_workspace(first["id"]) is None
     assert database.get_thread(another) is None
     assert database.get_thread(kept_thread) is not None
-    assert first_path.exists()  # Removing an Aivra project never deletes the user's folder.
+    assert first_path.exists()  # Removing a WorkBee project never deletes the user's folder.
     database.close()
 
 
@@ -126,4 +126,97 @@ def test_token_usage_is_aggregated_by_model_and_run(tmp_path: Path):
     assert summary["byModel"][0]["input_tokens"] == 110
     assert summary["byModel"][0]["conversations"] == 1
     assert summary["daily"][0]["tokens"] == 140
+    database.close()
+
+
+def test_multi_agent_tasks_are_persisted_with_thread_history(tmp_path: Path):
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir()
+    database = Database(tmp_path / "agents.sqlite3")
+    workspace = database.select_workspace(workspace_path)
+    thread_id = database.create_thread(workspace["id"], "协作分析")
+    run_id = database.create_run(thread_id, "协作分析", "task")
+    task_id = database.create_agent_task(run_id, "nova", "Nova", "检查工程实现")
+    database.update_agent_task(task_id, "completed", "结论与证据")
+
+    task = database.get_thread(thread_id)["agent_tasks"][0]
+    assert task["role_id"] == "nova"
+    assert task["status"] == "completed"
+    assert task["output"] == "结论与证据"
+    assert database.delete_thread(thread_id) is True
+    database.close()
+
+
+def test_incomplete_run_can_be_recovered_before_side_effects(tmp_path: Path):
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir()
+    database = Database(tmp_path / "recovery.sqlite3")
+    workspace = database.select_workspace(workspace_path)
+    thread_id = database.create_thread(workspace["id"], "恢复本地任务")
+    run_id = database.create_run(thread_id, "恢复本地任务", "task")
+    database.save_checkpoint(run_id, {
+        "workspaceId": workspace["id"],
+        "mode": "task",
+        "roleIds": ["aivra", "nova"],
+        "approvalMode": "request",
+        "documents": ["README.md"],
+        "sideEffectsCompleted": False,
+    })
+    database.set_run_status(run_id, "running")
+
+    assert database.interrupt_incomplete_runs() == 1
+    recoverable = database.list_recoverable_runs()
+    assert recoverable[0]["id"] == run_id
+    assert recoverable[0]["safeToResume"] is True
+
+    resumed = database.prepare_run_resume(run_id)
+    assert resumed is not None
+    assert resumed["thread_id"] == thread_id
+    assert resumed["roleIds"] == ["aivra", "nova"]
+    assert database.prepare_run_resume(run_id) is None
+    database.close()
+
+
+def test_run_is_not_replayed_after_side_effect_completed(tmp_path: Path):
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir()
+    database = Database(tmp_path / "unsafe-recovery.sqlite3")
+    workspace = database.select_workspace(workspace_path)
+    thread_id = database.create_thread(workspace["id"], "执行写入")
+    run_id = database.create_run(thread_id, "执行写入", "task")
+    database.save_checkpoint(run_id, {
+        "workspaceId": workspace["id"],
+        "mode": "task",
+        "roleIds": ["aivra"],
+        "sideEffectsCompleted": True,
+    })
+    database.set_run_status(run_id, "waiting_approval")
+
+    assert database.interrupt_incomplete_runs() == 1
+    recoverable = database.list_recoverable_runs()
+    assert recoverable[0]["safeToResume"] is False
+    assert database.prepare_run_resume(run_id) is None
+    database.close()
+
+
+def test_run_is_not_replayed_when_side_effect_outcome_is_unknown(tmp_path: Path):
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir()
+    database = Database(tmp_path / "unknown-side-effect.sqlite3")
+    workspace = database.select_workspace(workspace_path)
+    thread_id = database.create_thread(workspace["id"], "执行外部操作")
+    run_id = database.create_run(thread_id, "执行外部操作", "task")
+    database.save_checkpoint(run_id, {
+        "workspaceId": workspace["id"],
+        "mode": "task",
+        "roleIds": ["aivra"],
+        "sideEffectStarted": True,
+        "sideEffectsCompleted": False,
+    })
+    database.set_run_status(run_id, "running")
+
+    database.interrupt_incomplete_runs()
+
+    assert database.list_recoverable_runs()[0]["safeToResume"] is False
+    assert database.prepare_run_resume(run_id) is None
     database.close()

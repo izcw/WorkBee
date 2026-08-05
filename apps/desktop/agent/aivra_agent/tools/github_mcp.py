@@ -15,12 +15,13 @@ class GithubMcpError(RuntimeError):
     pass
 
 
-class GithubMcpClient:
-    url = "https://api.githubcopilot.com/mcp/"
+class RemoteMcpClient:
     protocol_version = "2025-03-26"
 
-    def __init__(self, token: str) -> None:
+    def __init__(self, url: str, token: str = "", name: str = "MCP") -> None:
+        self.url = url
         self._token = token
+        self.name = name
         self._session_id = ""
         self._next_id = 1
 
@@ -31,10 +32,11 @@ class GithubMcpClient:
         headers = {
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._token}",
             "MCP-Protocol-Version": self.protocol_version,
-            "User-Agent": "Aivra/0.1.0",
+            "User-Agent": "WorkBee/0.1.0",
         }
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
         request = urllib.request.Request(self.url, payload, headers=headers, method="POST")
@@ -44,10 +46,10 @@ class GithubMcpClient:
                 raw = response.read(2 * 1024 * 1024).decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             if exc.code == 401:
-                raise GithubMcpError("GitHub MCP 授权已失效，请重新连接 GitHub 插件") from exc
-            raise GithubMcpError(f"GitHub MCP 请求失败（HTTP {exc.code}）") from exc
+                raise GithubMcpError(f"{self.name} MCP 授权已失效，请重新连接") from exc
+            raise GithubMcpError(f"{self.name} MCP 请求失败（HTTP {exc.code}）") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
-            raise GithubMcpError("无法连接 GitHub MCP，请检查网络后重试") from exc
+            raise GithubMcpError(f"无法连接 {self.name} MCP，请检查网络后重试") from exc
         event_data = next((line[5:].strip() for line in raw.splitlines() if line.startswith("data:")), "")
         if event_data:
             raw = event_data
@@ -65,7 +67,9 @@ class GithubMcpClient:
 
     def _notify(self, method: str, params: Dict[str, Any]) -> None:
         payload = json.dumps({"jsonrpc": "2.0", "method": method, "params": params}).encode("utf-8")
-        headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json", "Authorization": f"Bearer {self._token}", "MCP-Protocol-Version": self.protocol_version, "User-Agent": "Aivra/0.1.0"}
+        headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": self.protocol_version, "User-Agent": "WorkBee/0.1.0"}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
         request = urllib.request.Request(self.url, payload, headers=headers, method="POST")
@@ -75,10 +79,10 @@ class GithubMcpClient:
         except urllib.error.HTTPError as exc:
             raise GithubMcpError(f"GitHub MCP 初始化失败（HTTP {exc.code}）") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
-            raise GithubMcpError("无法连接 GitHub MCP，请检查网络后重试") from exc
+            raise GithubMcpError(f"无法连接 {self.name} MCP，请检查网络后重试") from exc
 
     def list_tools(self) -> List[Dict[str, Any]]:
-        self._request("initialize", {"protocolVersion": self.protocol_version, "capabilities": {}, "clientInfo": {"name": "Aivra", "version": "0.1.0"}})
+        self._request("initialize", {"protocolVersion": self.protocol_version, "capabilities": {}, "clientInfo": {"name": "WorkBee", "version": "0.1.0"}})
         self._notify("notifications/initialized", {})
         tools = self._request("tools/list", {}).get("tools", [])
         return [item for item in tools if isinstance(item, dict) and isinstance(item.get("name"), str)]
@@ -86,3 +90,8 @@ class GithubMcpClient:
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
         result = self._request("tools/call", {"name": name, "arguments": arguments})
         return json.dumps(result, ensure_ascii=False)[:65536]
+
+
+class GithubMcpClient(RemoteMcpClient):
+    def __init__(self, token: str) -> None:
+        super().__init__("https://api.githubcopilot.com/mcp/", token, "GitHub")

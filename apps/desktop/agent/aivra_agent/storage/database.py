@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 from pathlib import Path
@@ -54,6 +55,28 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_token_usage_created ON token_usage(created_at);
                 CREATE INDEX IF NOT EXISTS idx_token_usage_model ON token_usage(model_id);
+                CREATE TABLE IF NOT EXISTS agent_tasks(
+                  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, role_id TEXT NOT NULL, role_name TEXT NOT NULL,
+                  goal TEXT NOT NULL, status TEXT NOT NULL, output TEXT, error TEXT,
+                  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_tasks_run ON agent_tasks(run_id);
+                CREATE TABLE IF NOT EXISTS knowledge_documents(
+                  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, path TEXT NOT NULL, content_hash TEXT NOT NULL,
+                  modified_ns INTEGER NOT NULL, size_bytes INTEGER NOT NULL, indexed_at TEXT NOT NULL,
+                  UNIQUE(workspace_id, path), FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+                );
+                CREATE TABLE IF NOT EXISTS knowledge_chunks(
+                  id TEXT PRIMARY KEY, document_id TEXT NOT NULL, workspace_id TEXT NOT NULL, path TEXT NOT NULL,
+                  ordinal INTEGER NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, content TEXT NOT NULL,
+                  embedding_json TEXT, embedding_model TEXT,
+                  FOREIGN KEY(document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+                  FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_workspace ON knowledge_chunks(workspace_id);
+                CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts5(
+                  chunk_id UNINDEXED, workspace_id UNINDEXED, path, content, tokenize='unicode61'
+                );
                 INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, datetime('now'));
                 """
             )
@@ -63,6 +86,11 @@ class Database:
             message_columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(messages)").fetchall()}
             if "role_id" not in message_columns:
                 self._connection.execute("ALTER TABLE messages ADD COLUMN role_id TEXT")
+            knowledge_columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(knowledge_chunks)").fetchall()}
+            if "embedding_json" not in knowledge_columns:
+                self._connection.execute("ALTER TABLE knowledge_chunks ADD COLUMN embedding_json TEXT")
+            if "embedding_model" not in knowledge_columns:
+                self._connection.execute("ALTER TABLE knowledge_chunks ADD COLUMN embedding_model TEXT")
 
     def select_workspace(self, path: Path, name: Optional[str] = None) -> Dict[str, Any]:
         resolved = path.expanduser().resolve(strict=True)
@@ -164,11 +192,228 @@ class Database:
 
     def save_checkpoint(self, run_id: str, state: Dict[str, Any]) -> None:
         with self._lock, self._connection:
+            existing = self._connection.execute(
+                "SELECT state_json FROM checkpoints WHERE run_id=?", (run_id,)
+            ).fetchone()
+            merged: Dict[str, Any] = {}
+            if existing:
+                try:
+                    merged = json.loads(existing["state_json"])
+                except (json.JSONDecodeError, TypeError):
+                    merged = {}
+            merged.update(state)
             self._connection.execute(
                 "INSERT INTO checkpoints(run_id,state_json,updated_at) VALUES(?,?,?) "
                 "ON CONFLICT(run_id) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at",
-                (run_id, json.dumps(state, ensure_ascii=False), utc_now()),
+                (run_id, json.dumps(merged, ensure_ascii=False), utc_now()),
             )
+
+    def get_checkpoint(self, run_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT state_json FROM checkpoints WHERE run_id=?", (run_id,)
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            value = json.loads(row["state_json"])
+            return value if isinstance(value, dict) else None
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    def interrupt_incomplete_runs(self) -> int:
+        with self._lock, self._connection:
+            rows = self._connection.execute(
+                "SELECT id FROM runs WHERE status IN ('running','waiting_approval','queued')"
+            ).fetchall()
+            if rows:
+                self._connection.execute(
+                    "UPDATE runs SET status='interrupted',error='应用退出前任务未完成',updated_at=? "
+                    "WHERE status IN ('running','waiting_approval','queued')", (utc_now(),)
+                )
+                self._connection.execute(
+                    "UPDATE approvals SET status='expired',resolved_at=? WHERE status='pending'", (utc_now(),)
+                )
+        return len(rows)
+
+    def list_recoverable_runs(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT r.id,r.thread_id,r.role_id,r.mode,r.updated_at,t.workspace_id,t.title "
+                "FROM runs r JOIN threads t ON t.id=r.thread_id "
+                "WHERE r.status='interrupted' ORDER BY r.updated_at DESC"
+            ).fetchall()
+        result = []
+        for row in rows:
+            checkpoint = self.get_checkpoint(row["id"]) or {}
+            item = dict(row)
+            item["safeToResume"] = not bool(
+                checkpoint.get("sideEffectStarted") or checkpoint.get("sideEffectsCompleted")
+            )
+            item["phase"] = str(checkpoint.get("status") or "unknown")
+            result.append(item)
+        return result
+
+    def prepare_run_resume(self, run_id: str) -> Optional[Dict[str, Any]]:
+        checkpoint = self.get_checkpoint(run_id)
+        if not checkpoint or checkpoint.get("sideEffectStarted") or checkpoint.get("sideEffectsCompleted"):
+            return None
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT r.id,r.thread_id,t.workspace_id FROM runs r JOIN threads t ON t.id=r.thread_id "
+                "WHERE r.id=? AND r.status='interrupted'", (run_id,)
+            ).fetchone()
+            if not row:
+                return None
+            self._connection.execute(
+                "UPDATE runs SET status='queued',error=NULL,updated_at=? WHERE id=?", (utc_now(), run_id)
+            )
+        return {**dict(row), **checkpoint}
+
+    def create_agent_task(self, run_id: str, role_id: str, role_name: str, goal: str) -> str:
+        task_id = str(uuid4())
+        now = utc_now()
+        with self._lock, self._connection:
+            self._connection.execute(
+                "INSERT INTO agent_tasks(id,run_id,role_id,role_name,goal,status,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,'queued',?,?)",
+                (task_id, run_id, role_id, role_name, goal[:4000], now, now),
+            )
+        return task_id
+
+    def update_agent_task(self, task_id: str, status: str, output: str = "", error: str = "") -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE agent_tasks SET status=?,output=?,error=?,updated_at=? WHERE id=?",
+                (status, output[:65536] or None, error[:2000] or None, utc_now(), task_id),
+            )
+
+    def knowledge_document_hash(self, workspace_id: str, path: str) -> Optional[str]:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT content_hash FROM knowledge_documents WHERE workspace_id=? AND path=?",
+                (workspace_id, path),
+            ).fetchone()
+        return str(row["content_hash"]) if row else None
+
+    def replace_knowledge_document(self, workspace_id: str, path: str, content_hash: str,
+                                   modified_ns: int, size_bytes: int, chunks: List[Dict[str, Any]]) -> None:
+        now = utc_now()
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT id FROM knowledge_documents WHERE workspace_id=? AND path=?",
+                (workspace_id, path),
+            ).fetchone()
+            document_id = str(row["id"]) if row else str(uuid4())
+            if row:
+                chunk_ids = [
+                    item["id"] for item in self._connection.execute(
+                        "SELECT id FROM knowledge_chunks WHERE document_id=?", (document_id,)
+                    ).fetchall()
+                ]
+                if chunk_ids:
+                    placeholders = ",".join("?" for _ in chunk_ids)
+                    self._connection.execute(
+                        f"DELETE FROM knowledge_chunks_fts WHERE chunk_id IN ({placeholders})", chunk_ids
+                    )
+                self._connection.execute("DELETE FROM knowledge_chunks WHERE document_id=?", (document_id,))
+                self._connection.execute(
+                    "UPDATE knowledge_documents SET content_hash=?,modified_ns=?,size_bytes=?,indexed_at=? WHERE id=?",
+                    (content_hash, modified_ns, size_bytes, now, document_id),
+                )
+            else:
+                self._connection.execute(
+                    "INSERT INTO knowledge_documents(id,workspace_id,path,content_hash,modified_ns,size_bytes,indexed_at) "
+                    "VALUES(?,?,?,?,?,?,?)",
+                    (document_id, workspace_id, path, content_hash, modified_ns, size_bytes, now),
+                )
+            for ordinal, chunk in enumerate(chunks):
+                chunk_id = str(uuid4())
+                values = (
+                    chunk_id, document_id, workspace_id, path, ordinal,
+                    int(chunk["start_line"]), int(chunk["end_line"]), str(chunk["content"]),
+                    json.dumps(chunk.get("embedding")) if chunk.get("embedding") else None,
+                    str(chunk.get("embedding_model") or "") or None,
+                )
+                self._connection.execute(
+                    "INSERT INTO knowledge_chunks(id,document_id,workspace_id,path,ordinal,start_line,end_line,content,embedding_json,embedding_model) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)", values,
+                )
+                self._connection.execute(
+                    "INSERT INTO knowledge_chunks_fts(chunk_id,workspace_id,path,content) VALUES(?,?,?,?)",
+                    (chunk_id, workspace_id, path, str(chunk["content"])),
+                )
+
+    def remove_missing_knowledge_documents(self, workspace_id: str, seen_paths: set[str]) -> int:
+        with self._lock, self._connection:
+            rows = self._connection.execute(
+                "SELECT id,path FROM knowledge_documents WHERE workspace_id=?", (workspace_id,)
+            ).fetchall()
+            missing = [row for row in rows if row["path"] not in seen_paths]
+            for row in missing:
+                chunk_ids = [
+                    item["id"] for item in self._connection.execute(
+                        "SELECT id FROM knowledge_chunks WHERE document_id=?", (row["id"],)
+                    ).fetchall()
+                ]
+                if chunk_ids:
+                    placeholders = ",".join("?" for _ in chunk_ids)
+                    self._connection.execute(
+                        f"DELETE FROM knowledge_chunks_fts WHERE chunk_id IN ({placeholders})", chunk_ids
+                    )
+                self._connection.execute("DELETE FROM knowledge_chunks WHERE document_id=?", (row["id"],))
+                self._connection.execute("DELETE FROM knowledge_documents WHERE id=?", (row["id"],))
+        return len(missing)
+
+    def search_knowledge(self, workspace_id: str, query: str, limit: int = 6) -> List[Dict[str, Any]]:
+        latin = re.findall(r"[A-Za-z0-9_./-]{2,}", query)
+        chinese: List[str] = []
+        for value in re.findall(r"[\u4e00-\u9fff]{2,}", query):
+            if len(value) <= 4:
+                chinese.append(value)
+            else:
+                chinese.extend(value[index:index + 2] for index in range(len(value) - 1))
+        terms = list(dict.fromkeys([*latin, *chinese]))[:12]
+        with self._lock:
+            rows: List[sqlite3.Row] = []
+            if terms:
+                fts_query = " OR ".join(f'"{term.replace(chr(34), "")}"' for term in terms)
+                try:
+                    rows = self._connection.execute(
+                        "SELECT c.id,c.path,c.start_line,c.end_line,c.content,bm25(knowledge_chunks_fts) score "
+                        "FROM knowledge_chunks_fts JOIN knowledge_chunks c ON c.id=knowledge_chunks_fts.chunk_id "
+                        "WHERE knowledge_chunks_fts MATCH ? AND c.workspace_id=? ORDER BY score LIMIT ?",
+                        (fts_query, workspace_id, limit),
+                    ).fetchall()
+                except sqlite3.OperationalError:
+                    rows = []
+            if not rows:
+                like_terms = terms or [query[:100]]
+                clauses = " OR ".join("content LIKE ?" for _ in like_terms)
+                rows = self._connection.execute(
+                    f"SELECT id,path,start_line,end_line,content,0 score FROM knowledge_chunks "
+                    f"WHERE workspace_id=? AND ({clauses}) ORDER BY path,ordinal LIMIT ?",
+                    (workspace_id, *(f"%{term}%" for term in like_terms), limit),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def vector_knowledge_chunks(self, workspace_id: str, embedding_model: str,
+                                limit: int = 4000) -> List[Dict[str, Any]]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT id,path,start_line,end_line,content,embedding_json FROM knowledge_chunks "
+                "WHERE workspace_id=? AND embedding_model=? AND embedding_json IS NOT NULL LIMIT ?",
+                (workspace_id, embedding_model, limit),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["embedding"] = json.loads(item.pop("embedding_json"))
+            except (json.JSONDecodeError, TypeError):
+                continue
+            result.append(item)
+        return result
 
     def record_token_usage(self, run_id: str, thread_id: str, role_id: str, model_id: str, model: str,
                            input_tokens: int, output_tokens: int, total_tokens: int) -> None:
@@ -220,10 +465,16 @@ class Database:
                 "SELECT a.id,a.run_id,a.tool_name,a.arguments_json,a.status,a.created_at FROM approvals a "
                 "JOIN runs r ON r.id=a.run_id WHERE r.thread_id=? ORDER BY a.created_at", (thread_id,)
             ).fetchall()
+            agent_tasks = self._connection.execute(
+                "SELECT id,run_id,role_id,role_name,goal,status,output,error,created_at,updated_at "
+                "FROM agent_tasks WHERE run_id IN (SELECT id FROM runs WHERE thread_id=?) ORDER BY created_at",
+                (thread_id,),
+            ).fetchall()
         result = dict(thread)
         result["messages"] = [dict(row) for row in messages]
         result["runs"] = [dict(row) for row in runs]
         result["approvals"] = [dict(row) for row in approvals]
+        result["agent_tasks"] = [dict(row) for row in agent_tasks]
         return result
 
     def delete_thread(self, thread_id: str) -> bool:
@@ -234,6 +485,7 @@ class Database:
             self._connection.execute("DELETE FROM approvals WHERE run_id IN (SELECT id FROM runs WHERE thread_id=?)", (thread_id,))
             self._connection.execute("DELETE FROM checkpoints WHERE run_id IN (SELECT id FROM runs WHERE thread_id=?)", (thread_id,))
             self._connection.execute("DELETE FROM token_usage WHERE thread_id=?", (thread_id,))
+            self._connection.execute("DELETE FROM agent_tasks WHERE run_id IN (SELECT id FROM runs WHERE thread_id=?)", (thread_id,))
             self._connection.execute("DELETE FROM messages WHERE thread_id=?", (thread_id,))
             self._connection.execute("DELETE FROM runs WHERE thread_id=?", (thread_id,))
             self._connection.execute("DELETE FROM threads WHERE id=?", (thread_id,))
@@ -247,6 +499,22 @@ class Database:
             thread_ids = [row["id"] for row in self._connection.execute("SELECT id FROM threads WHERE workspace_id=?", (workspace_id,)).fetchall()]
             for thread_id in thread_ids:
                 self.delete_thread(thread_id)
+            documents = self._connection.execute(
+                "SELECT id FROM knowledge_documents WHERE workspace_id=?", (workspace_id,)
+            ).fetchall()
+            for document in documents:
+                chunk_ids = [
+                    item["id"] for item in self._connection.execute(
+                        "SELECT id FROM knowledge_chunks WHERE document_id=?", (document["id"],)
+                    ).fetchall()
+                ]
+                if chunk_ids:
+                    placeholders = ",".join("?" for _ in chunk_ids)
+                    self._connection.execute(
+                        f"DELETE FROM knowledge_chunks_fts WHERE chunk_id IN ({placeholders})", chunk_ids
+                    )
+            self._connection.execute("DELETE FROM knowledge_chunks WHERE workspace_id=?", (workspace_id,))
+            self._connection.execute("DELETE FROM knowledge_documents WHERE workspace_id=?", (workspace_id,))
             self._connection.execute("DELETE FROM workspaces WHERE id=?", (workspace_id,))
         return True
 

@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('aivraDesktop', {
     selectWorkspace: () => ipcRenderer.invoke('agent:select-workspace'),
     openWorkspace: workspacePath => ipcRenderer.invoke('agent:open-workspace', workspacePath),
     executeCommand: input => ipcRenderer.invoke('agent:execute-command', input),
-    createProject: () => ipcRenderer.invoke('agent:create-project'),
+    createProject: name => ipcRenderer.invoke('agent:create-project', name),
     listWorkspaces: () => ipcRenderer.invoke('agent:list-workspaces'),
     deleteWorkspace: workspaceId => ipcRenderer.invoke('agent:delete-workspace', workspaceId),
     renameWorkspace: input => ipcRenderer.invoke('agent:rename-workspace', input),
@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('aivraDesktop', {
     usageSummary: () => ipcRenderer.invoke('agent:usage-summary'),
     getThread: threadId => ipcRenderer.invoke('agent:get-thread', threadId),
     createRun: input => ipcRenderer.invoke('agent:create-run', input),
+    listRecoverableRuns: () => ipcRenderer.invoke('agent:list-recoverable-runs'),
+    resumeRun: runId => ipcRenderer.invoke('agent:resume-run', runId),
     cancelRun: runId => ipcRenderer.invoke('agent:cancel-run', runId),
     resolveApproval: input => ipcRenderer.invoke('agent:resolve-approval', input),
     onEvent: callback => {
@@ -55,5 +57,8 @@ contextBridge.exposeInMainWorld('aivraDesktop', {
     openGithubTokenPage: () => ipcRenderer.invoke('plugins:github-open-token-page'),
     connectGithub: input => ipcRenderer.invoke('plugins:github-connect', input),
     disconnectGithub: () => ipcRenderer.invoke('plugins:github-disconnect'),
+    listMcpServers: () => ipcRenderer.invoke('plugins:mcp-list'),
+    saveMcpServer: input => ipcRenderer.invoke('plugins:mcp-save', input),
+    deleteMcpServer: id => ipcRenderer.invoke('plugins:mcp-delete', id),
   },
 });

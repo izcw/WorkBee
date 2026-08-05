@@ -23,7 +23,7 @@ function RoleDetails({ role }: { role: RoleConfig }) {
 
 export function RoleCard({ role, compact = false, onSelect, action, selected = false }: RoleCardProps) {
   const content = <>
-    <div className="role-card-header"><Avatar image={roleAvatar(role)} size={compact ? 42 :65}/><div><strong>{role.name}</strong><span>{role.role}</span>{!compact && <StatusDot label={role.keyAvailable ? '已配置' : '待配置'}/>}</div></div>
+    <div className="role-card-header"><Avatar image={roleAvatar(role)} size={compact ? 42 : 50}/><div><strong>{role.name}</strong><span>{role.role}</span></div></div>
     <div className="role-card-intro"><h4>简介</h4><p>{role.description || '暂无角色描述'}</p></div>
     {!compact && <RoleDetails role={role}/>} 
   </>;

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "aivra-agent"
 version = "0.1.0"
-description = "Local-first Aivra desktop agent"
+description = "Local-first WorkBee desktop agent"
 requires-python = ">=3.11"
 dependencies = [
   "jsonschema>=4.23,<5",

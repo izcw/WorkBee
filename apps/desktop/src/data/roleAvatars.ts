@@ -1,4 +1,3 @@
-import aivraAvatar from '../assets/images/Team/Aivra.png';
 import role1 from '../assets/images/team-avatars/role1.png';
 import role2 from '../assets/images/team-avatars/role2.png';
 import role3 from '../assets/images/team-avatars/role3.png';
@@ -9,7 +8,7 @@ import role6 from '../assets/images/team-avatars/role6.png';
 export const DEFAULT_ROLE_AVATARS = [role1, role2, role3, role4, role5, role6];
 
 const builtInRoleAvatars: Record<string, string> = {
-  aivra: aivraAvatar,
+  aivra: role1,
 };
 
 export function roleAvatar(role?: Pick<RoleConfig, 'id' | 'avatar'>) {
@@ -23,4 +22,4 @@ export function roleAvatarValue(role?: Pick<RoleConfig, 'id' | 'avatar'>) {
   return role?.avatar || (role && builtInRoleAvatars[role.id] ? `builtin:${role.id}` : 'default:1');
 }
 
-export { aivraAvatar };
+export { role1 };

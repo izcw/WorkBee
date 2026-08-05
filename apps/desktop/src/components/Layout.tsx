@@ -22,7 +22,7 @@ function ProfileMenu({ close, openSettings }: { close: () => void; openSettings:
     return () => removeEventListener('mousedown', dismiss);
   }, [close]);
   return <div className="profile-menu" ref={ref}>
-    <div className="account-summary"><Avatar kind="yellow" size={38}/><div><strong>Yoko</strong><span>yoko@aivra.ai</span></div></div>
+    <div className="account-summary"><Avatar kind="yellow" size={30}/><div><strong>Yoko</strong><span>izcw@workbee.ai</span></div></div>
     <div className="usage"><span>累计 Token</span><strong>{new Intl.NumberFormat('zh-CN').format(usage.totalTokens)}</strong><small>峰值 {new Intl.NumberFormat('zh-CN').format(usage.peakTokens)}</small></div>
     <button onClick={() => { close(); openSettings(); }}><Settings size={16}/>设置</button><button><LogOut size={16}/>退出登录</button>
   </div>;
@@ -68,7 +68,7 @@ export function Sidebar({ page, onNavigate, openSettings }: { page: PageId; onNa
   }, []);
   const toggleProject = (id: string) => setExpandedProjects(items => items.includes(id) ? items.filter(item => item !== id) : [...items, id]);
   return <aside className="sidebar">
-    <div className="brand-row"><button className="brand" onClick={() => onNavigate('home')}>Aivra</button></div>
+    <div className="brand-row"><button className="brand" onClick={() => onNavigate('home')}>WorkBee</button></div>
     <SearchInput className="sidebar-search"/>
     <nav className="main-nav">
       <button className={`${page === 'home' ? 'active' : ''}`} onClick={() => { startNewConversation('', true); onNavigate('home'); }}><PlusSquare size={17}/><span>新建项目</span></button>
@@ -93,7 +93,7 @@ export function Sidebar({ page, onNavigate, openSettings }: { page: PageId; onNa
                 setEditingProject(project);
               }}><Pencil size={13}/>编辑</button><button className="danger" role="menuitem" onClick={() => {
                 setOpenTreeMenu('');
-                if (!confirm(`确定从 Aivra 中删除项目“${project.name}”及其全部对话历史吗？\n\n磁盘中的项目文件夹不会被删除。`)) return;
+                if (!confirm(`确定从 WorkBee 中删除项目“${project.name}”及其全部对话历史吗？\n\n磁盘中的项目文件夹不会被删除。`)) return;
                 deleteProject(project.id).then(() => setExpandedProjects(items => items.filter(item => item !== project.id))).catch(reason => alert(reason instanceof Error ? reason.message : String(reason)));
               }}><Trash2 size={13}/>删除项目</button></div>}
             </div>
@@ -129,7 +129,7 @@ export function Sidebar({ page, onNavigate, openSettings }: { page: PageId; onNa
 
 function TerminalPanel({ workspace, close }: { workspace: Workspace | null; close: () => void }) {
   const [terminalInput, setTerminalInput] = useState('');
-  const [terminalLines, setTerminalLines] = useState<string[]>(['Aivra Terminal · 当前工作区命令窗口', '输入命令并按 Enter 执行']);
+  const [terminalLines, setTerminalLines] = useState<string[]>(['WorkBee Terminal · 当前工作区命令窗口', '输入命令并按 Enter 执行']);
   return <section className="terminal-panel"><header><span><Terminal size={14}/>终端{workspace && <small>{workspace.path}</small>}</span><button onClick={close} aria-label="关闭终端"><X size={15}/></button></header><div className="terminal-output">{terminalLines.map((line, index) => <div key={`${line}-${index}`}>{line}</div>)}</div><form onSubmit={async event => { event.preventDefault(); const command = terminalInput.trim(); if (!command) return; setTerminalLines(lines => [...lines, `$ ${command}`]); setTerminalInput(''); try { const result = await window.aivraDesktop?.agent.executeCommand({ command, cwd: workspace?.path }); setTerminalLines(lines => [...lines, ...(result ? [result.stdout, result.stderr].filter(Boolean) : ['桌面端不可用'])]); } catch (error) { setTerminalLines(lines => [...lines, error instanceof Error ? error.message : String(error)]); } }}><span>$</span><input value={terminalInput} onChange={event => setTerminalInput(event.target.value)} placeholder={workspace ? '输入命令…' : '请先选择项目文件夹'} disabled={!workspace}/></form></section>;
 }
 

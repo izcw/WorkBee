@@ -6,6 +6,7 @@ import re
 import sys
 import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,6 +15,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from .. import __version__
 from ..graphs import RunCancelled, SingleAgentGraph
+from ..knowledge import EmbeddingProvider, KnowledgeRepository
 from ..protocol import MAX_LINE_BYTES, ProtocolError, envelope, validate_request
 from ..storage import Database
 from ..tools import ToolError, ToolRegistry
@@ -89,6 +91,43 @@ def select_role_from_output(content: Any, role_ids: List[str], providers: Dict[s
     return min(mentions)[1] if mentions else None
 
 
+def select_roles_from_output(content: Any, role_ids: List[str], limit: int = 3) -> List[str]:
+    """Extract an ordered role list from a planner response."""
+    texts: List[str] = []
+    if isinstance(content, str):
+        texts.append(content)
+    elif isinstance(content, list):
+        texts.extend(str(item.get("text") or item.get("content") or "") if isinstance(item, dict) else str(item) for item in content)
+    elif isinstance(content, dict):
+        texts.append(json.dumps(content, ensure_ascii=False))
+    selected: List[str] = []
+    for text in texts:
+        stripped = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", text, flags=re.IGNORECASE)
+        candidates = [stripped, *re.findall(r"\{[\s\S]*?\}|\[[\s\S]*?\]", stripped)]
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            values = parsed.get("roleIds", parsed.get("roles", [])) if isinstance(parsed, dict) else parsed
+            if isinstance(values, str):
+                values = [values]
+            if isinstance(values, list):
+                for value in values:
+                    role_id = str(value)
+                    if role_id in role_ids and role_id not in selected:
+                        selected.append(role_id)
+                        if len(selected) >= limit:
+                            return selected
+    searchable = "\n".join(texts)
+    positions = []
+    for role_id in role_ids:
+        match = re.search(rf"(?<![\w-]){re.escape(role_id)}(?![\w-])", searchable, flags=re.IGNORECASE)
+        if match:
+            positions.append((match.start(), role_id))
+    return [item[1] for item in sorted(positions)[:limit]]
+
+
 def compact_role_selector_context(thread_messages: List[Dict[str, Any]], providers: Dict[str, Dict[str, Any]],
                                   role_ids: List[str]) -> tuple[str, str]:
     """Keep routing lightweight: it is a classifier, not another full agent turn."""
@@ -126,20 +165,37 @@ class AgentServer:
     def __init__(self) -> None:
         data_dir = Path(os.environ.get("AIVRA_DATA_DIR", str(Path.home() / ".aivra")))
         self.database = Database(data_dir / "aivra.sqlite3")
+        self.database.interrupt_incomplete_runs()
         self.api_key = os.environ.get("AIVRA_DEEPSEEK_API_KEY", "")
         self.model = os.environ.get("AIVRA_MODEL", "deepseek-v4-flash")
         self.base_url = os.environ.get("AIVRA_BASE_URL", "https://api.deepseek.com")
         self.providers = self._load_providers()
         self.github_mcp_token = os.environ.get("AIVRA_GITHUB_MCP_TOKEN", "")
+        self.mcp_servers = self._load_mcp_servers()
+        self.embedding_provider = EmbeddingProvider.from_environment(os.environ.get("AIVRA_EMBEDDING_PROVIDER", ""))
         self._write_lock = threading.Lock()
         self._shutdown = threading.Event()
         self._runs: Dict[str, threading.Event] = {}
         self._workers: Dict[str, threading.Thread] = {}
         self._approvals: Dict[str, PendingApproval] = {}
         self._state_lock = threading.RLock()
+        self._indexing_workspaces: set[str] = set()
+
+    @staticmethod
+    def _load_mcp_servers() -> List[Dict[str, Any]]:
+        try:
+            value = json.loads(os.environ.get("AIVRA_MCP_SERVERS", "[]"))
+            if not isinstance(value, list):
+                return []
+            return [
+                item for item in value[:20]
+                if isinstance(item, dict) and isinstance(item.get("id"), str) and isinstance(item.get("url"), str)
+            ]
+        except (json.JSONDecodeError, TypeError):
+            return []
 
     def _load_providers(self) -> Dict[str, Dict[str, Any]]:
-        fallback = {"aivra": {"name": "Aivra", "description": "默认 Agent", "skills": [], "knowledge": [], "apiKey": self.api_key, "modelId": self.model, "model": self.model, "baseUrl": self.base_url}}
+        fallback = {"aivra": {"name": "BeeYo", "description": "默认 Agent", "skills": [], "knowledge": [], "apiKey": self.api_key, "modelId": self.model, "model": self.model, "baseUrl": self.base_url}}
         try:
             value = json.loads(os.environ.get("AIVRA_ROLE_PROVIDERS", ""))
             if not isinstance(value, dict):
@@ -210,7 +266,10 @@ class AgentServer:
         if message_type == "runtime.hello":
             self.respond(request, "runtime.ready", {
                 "agentVersion": __version__, "protocolVersion": 1,
-                "capabilities": ["workspace", "chat", "tools", "approval", "cancel", "persistence"],
+                "capabilities": [
+                    "workspace", "chat", "tools", "approval", "cancel", "persistence",
+                    "multi_agent", "knowledge_retrieval", "hybrid_retrieval", "mcp_registry",
+                ],
                 "provider": {"roles": [{"id": role_id, "name": value["name"], "model": value["model"], "baseUrl": value["baseUrl"], "keyAvailable": bool(value["apiKey"])} for role_id, value in self.providers.items()]},
             })
         elif message_type == "runtime.health":
@@ -220,6 +279,7 @@ class AgentServer:
             return True
         elif message_type == "workspace.select":
             workspace = self.database.select_workspace(Path(self._required_string(payload, "path")), str(payload.get("name") or "").strip()[:80] or None)
+            self._schedule_lexical_index(workspace)
             self.respond(request, "workspace.selected", {"workspace": workspace})
         elif message_type == "workspace.tree":
             workspace = self.database.get_workspace(self._required_string(payload, "workspaceId"))
@@ -258,6 +318,10 @@ class AgentServer:
                 self.respond(request, "thread.get", {"thread": thread})
         elif message_type == "run.create":
             self._create_run(request, payload)
+        elif message_type == "run.recoverable":
+            self.respond(request, "run.recoverable", {"runs": self.database.list_recoverable_runs()})
+        elif message_type == "run.resume":
+            self._resume_run(request, payload)
         elif message_type == "run.cancel":
             run_id = self._required_string(payload, "runId")
             with self._state_lock:
@@ -314,6 +378,11 @@ class AgentServer:
                 self.respond(request, "run.created", {}, {"code": "THREAD_WORKSPACE_MISMATCH", "message": "Thread does not belong to the selected workspace", "retryable": False})
                 return
         run_id = self.database.create_run(thread_id, prompt, mode, role_id)
+        self.database.save_checkpoint(run_id, {
+            "status": "queued", "workspaceId": workspace_id, "mode": mode, "roleIds": role_ids,
+            "approvalMode": approval_mode, "workflowName": workflow_name, "documents": documents,
+            "sideEffectsCompleted": False,
+        })
         cancel = threading.Event()
         with self._state_lock:
             self._runs[run_id] = cancel
@@ -322,6 +391,44 @@ class AgentServer:
             target=self._execute_run,
             args=(run_id, thread_id, workspace, mode, role_ids, approval_mode, workflow_name, documents, cancel),
             name=f"aivra-run-{run_id[:8]}", daemon=True,
+        )
+        with self._state_lock:
+            self._workers[run_id] = worker
+        worker.start()
+
+    def _resume_run(self, request: Dict[str, Any], payload: Dict[str, Any]) -> None:
+        run_id = self._required_string(payload, "runId")
+        recovered = self.database.prepare_run_resume(run_id)
+        if recovered is None:
+            self.respond(request, "run.resume", {}, {
+                "code": "RUN_NOT_RECOVERABLE",
+                "message": "任务不存在、已恢复，或此前可能已产生副作用，不能安全重放",
+                "retryable": False,
+            })
+            return
+        workspace = self.database.get_workspace(str(recovered["workspace_id"]))
+        if workspace is None:
+            self.respond(request, "run.resume", {}, {
+                "code": "WORKSPACE_NOT_FOUND", "message": "原工作区不存在", "retryable": False,
+            })
+            return
+        role_ids = [item for item in recovered.get("roleIds", []) if item in self.providers]
+        if not role_ids:
+            role_ids = [str(recovered.get("role_id") or "aivra")]
+        cancel = threading.Event()
+        with self._state_lock:
+            self._runs[run_id] = cancel
+        self.respond(request, "run.resume", {
+            "runId": run_id, "threadId": recovered["thread_id"], "roleIds": role_ids,
+        })
+        worker = threading.Thread(
+            target=self._execute_run,
+            args=(
+                run_id, recovered["thread_id"], workspace, str(recovered.get("mode") or "task"), role_ids,
+                str(recovered.get("approvalMode") or "request"), str(recovered.get("workflowName") or ""),
+                list(recovered.get("documents") or []), cancel,
+            ),
+            name=f"aivra-resume-{run_id[:8]}", daemon=True,
         )
         with self._state_lock:
             self._workers[run_id] = worker
@@ -343,23 +450,38 @@ class AgentServer:
     def _execute_run(self, run_id: str, thread_id: str, workspace: Dict[str, Any], mode: str, role_ids: List[str],
                      approval_mode: str, workflow_name: str, documents: List[str], cancel: threading.Event) -> None:
         sequence = 0
+        emit_lock = threading.Lock()
 
         def emit(message_type: str, payload: Dict[str, Any]) -> None:
             nonlocal sequence
-            sequence += 1
-            self.event(message_type, payload, run_id, sequence)
+            with emit_lock:
+                sequence += 1
+                self.event(message_type, payload, run_id, sequence)
 
         try:
-            role_id = role_ids[0]
+            team_task = mode == "task" and len(role_ids) > 1
+            role_id = "aivra" if team_task and "aivra" in role_ids else role_ids[0]
             provider = self.providers[role_id]
-            missing = next((self.providers[item] for item in role_ids if not self.providers[item]["apiKey"]), None)
-            if missing:
-                raise RuntimeError(f"请先为角色 {missing['name']} 配置 API Key")
+            if not provider["apiKey"]:
+                raise RuntimeError(f"请先为协调角色 {provider['name']} 配置 API Key")
             self.database.set_run_status(run_id, "running")
             emit("run.started", {"runId": run_id, "threadId": thread_id, "roleIds": role_ids})
             thread = self.database.get_thread(thread_id)
             assert thread is not None
-            if len(role_ids) > 1:
+            knowledge = KnowledgeRepository(
+                self.database, workspace["id"], Path(workspace["path"]), self.embedding_provider
+            )
+            workspace_documents = [
+                item for item in documents
+                if item not in BUILTIN_KNOWLEDGE and not Path(item).is_absolute() and ".." not in Path(item).parts
+            ]
+            index_stats = knowledge.index(workspace_documents)
+            emit("knowledge.indexed", {
+                "workspaceId": workspace["id"], "retrievalMode": "hybrid" if self.embedding_provider else "fts5",
+                **index_stats,
+            })
+
+            if len(role_ids) > 1 and not team_task:
                 emit("team.selecting", {"roleIds": role_ids, "names": [self.providers[item]["name"] for item in role_ids]})
                 router_role_id = role_id
                 router_provider = provider
@@ -389,14 +511,55 @@ class AgentServer:
                 provider = self.providers[role_id]
                 self.database.set_run_role(run_id, role_id)
                 emit("team.selected", {"roleIds": role_ids, "names": [provider["name"]], "answerRoleId": role_id})
-            registry = ToolRegistry(Path(workspace["path"]), self.github_mcp_token)
+            elif team_task:
+                candidates = [
+                    item for item in role_ids if item != role_id and self.providers[item]["apiKey"]
+                ]
+                emit("team.selecting", {
+                    "roleIds": role_ids,
+                    "names": [self.providers[item]["name"] for item in role_ids],
+                    "mode": "collaboration",
+                })
+                selected_specialists: List[str] = []
+                if candidates:
+                    roster, recent_dialogue = compact_role_selector_context(
+                        thread["messages"], self.providers, candidates
+                    )
+                    planner_graph = SingleAgentGraph(
+                        api_key=provider["apiKey"], base_url=provider["baseUrl"], model=provider["model"], tools=[],
+                        on_delta=lambda _delta: None, cancel_event=cancel, streaming=False,
+                        temperature=0, timeout=25, max_retries=0, max_tokens=96,
+                    )
+                    planner_response = planner_graph.invoke([
+                        SystemMessage(content=(
+                            "你是多智能体任务协调器。根据任务与候选角色职责，选择 1 到 3 个能提供互补价值的专家。"
+                            "只输出 JSON：{\"roleIds\":[\"角色id\"]}。不要选择协调者，不要解释。"
+                        )),
+                        HumanMessage(content=f"候选专家：\n{roster}\n\n任务上下文：\n{recent_dialogue}"),
+                    ])
+                    self._record_usage(run_id, thread_id, role_id, provider, planner_response)
+                    selected_specialists = select_roles_from_output(planner_response.content, candidates, 3)
+                    if not selected_specialists:
+                        selected_specialists = candidates[:min(2, len(candidates))]
+                role_ids = [role_id, *selected_specialists]
+                self.database.set_run_role(run_id, role_id)
+                emit("team.selected", {
+                    "roleIds": role_ids,
+                    "names": [self.providers[item]["name"] for item in role_ids],
+                    "answerRoleId": role_id,
+                    "mode": "collaboration",
+                })
+
+            registry = ToolRegistry(
+                Path(workspace["path"]), self.github_mcp_token, knowledge.format_results, self.mcp_servers
+            )
             team_names = "、".join(self.providers[item]["name"] for item in role_ids)
             knowledge_refs = provider.get("knowledge", [])
             knowledge_guidance = "\n".join(BUILTIN_KNOWLEDGE.get(item, f"知识库引用：{item}") for item in knowledge_refs)
             system = (
                 f"你是 {provider['name']}。角色描述：{provider.get('description', '')}。已启用技能：{'、'.join(provider.get('skills', [])) or '通用能力'}。"
                 f"内置知识与引用：{knowledge_guidance or '无'}。"
-                f"当前参与任务的 Aivra 团队成员为：{team_names}。用中文简洁回答。"
+                f"当前参与任务的 WorkBee 团队成员为：{team_names}。用中文简洁回答。"
                 f"当前且唯一授权工作区是 {workspace['name']}。不得访问或操作该文件夹之外的任何路径。读取上下文时主动使用工具。"
                 "不得声称执行过未调用的工具。你可以使用系统实际提供的读写与命令工具；是否需要用户批准由运行时按当前审批模式和风险等级决定，不要自行要求用户用文字确认。"
                 "命令工具不经过 Shell，网络被禁用，写入仅限当前工作区。"
@@ -405,15 +568,27 @@ class AgentServer:
                 system += "已连接 GitHub MCP。名称以 github_ 开头的工具会访问 GitHub；优先使用只读工具，涉及创建、修改或删除 GitHub 资源时必须等待运行时审批。若用户使用 @github，优先调用 GitHub MCP 工具完成请求。"
                 if registry.github_mcp_error:
                     system += f"GitHub MCP 工具发现失败：{registry.github_mcp_error}。不要声称 GitHub 工具可用；可调用 github_mcp_status 获取状态。"
+            if self.mcp_servers:
+                system += "已加载通用远程 MCP Server 注册表；名称以 mcp_ 开头的工具按 Server 和 Tool 命名空间隔离，副作用调用仍由运行时审批。"
             if workflow_name:
                 system += f"当前流程为“{workflow_name}”。"
             if documents:
                 knowledge_documents = [item for item in documents if item in BUILTIN_KNOWLEDGE]
-                workspace_documents = [item for item in documents if item not in BUILTIN_KNOWLEDGE and not Path(item).is_absolute() and ".." not in Path(item).parts]
                 if knowledge_documents:
                     system += "当前流程引用的知识库内容：" + "\n".join(BUILTIN_KNOWLEDGE[item] for item in knowledge_documents)
                 if workspace_documents:
                     system += "本流程引用的工作区文档为：" + "、".join(workspace_documents) + "。需要内容时使用读取工具，不能假装已读。"
+            latest_prompt = str(thread["messages"][-1]["content"]) if thread["messages"] else ""
+            retrieved_context = knowledge.format_results(latest_prompt, 6)
+            if not retrieved_context.startswith("未在当前工作区"):
+                system += (
+                    "以下是根据用户当前问题自动检索的本地知识片段。它们只是证据候选，"
+                    "回答前应核验相关性，并在使用时保留来源路径与行号：\n" + retrieved_context
+                )
+            system += (
+                "需要跨文件定位事实、概念、符号或历史约定时，优先调用 search_knowledge；"
+                "引用检索结果时保留其文件路径和行号，检索不到依据时明确说明。"
+            )
             messages: List[Any] = [SystemMessage(content=system)]
             for item in thread["messages"]:
                 if item["role"] == "user":
@@ -421,40 +596,80 @@ class AgentServer:
                 elif item["role"] == "assistant":
                     messages.append(AIMessage(content=item["content"]))
             advice_items: List[str] = []
-            for collaborator_id in role_ids[1:]:
-                if cancel.is_set():
-                    raise RunCancelled("Run was cancelled")
-                collaborator = self.providers[collaborator_id]
-                emit("agent.started", {"roleId": collaborator_id, "name": collaborator["name"], "model": collaborator["model"]})
-                collaborator_graph = SingleAgentGraph(
-                    api_key=collaborator["apiKey"], base_url=collaborator["baseUrl"], model=collaborator["model"], tools=[],
-                    on_delta=lambda _delta: None, cancel_event=cancel,
-                )
-                collaborator_messages: List[Any] = [SystemMessage(content=(
-                    f"你是 Aivra 团队成员 {collaborator['name']}。针对用户任务提供独立、简洁、可执行的专业分析，交给主协调者汇总。"
-                    "不要声称已读取文件或执行工具，因为本阶段没有工具。"
-                )), *messages[1:]]
-                collaborator_response = collaborator_graph.invoke(collaborator_messages)
-                self._record_usage(run_id, thread_id, collaborator_id, collaborator, collaborator_response)
-                advice = collaborator_response.content if isinstance(collaborator_response.content, str) else json.dumps(collaborator_response.content, ensure_ascii=False)
-                advice_items.append(f"{collaborator['name']} 的分析：\n{advice}")
-                emit("agent.completed", {"roleId": collaborator_id, "name": collaborator["name"]})
+            specialist_ids = role_ids[1:] if team_task else []
+            if specialist_ids:
+                with ThreadPoolExecutor(max_workers=min(3, len(specialist_ids)), thread_name_prefix="aivra-specialist") as executor:
+                    futures = {}
+                    for collaborator_id in specialist_ids:
+                        collaborator = self.providers[collaborator_id]
+                        task_id = self.database.create_agent_task(
+                            run_id, collaborator_id, collaborator["name"],
+                            str(thread["messages"][-1]["content"])[:4000],
+                        )
+                        self.database.update_agent_task(task_id, "running")
+                        emit("agent.started", {
+                            "taskId": task_id, "roleId": collaborator_id,
+                            "name": collaborator["name"], "model": collaborator["model"],
+                        })
+                        future = executor.submit(
+                            self._run_specialist, run_id, thread_id, collaborator_id, collaborator,
+                            messages[1:], Path(workspace["path"]), knowledge, cancel,
+                        )
+                        futures[future] = (task_id, collaborator_id, collaborator)
+                    for future in as_completed(futures):
+                        task_id, collaborator_id, collaborator = futures[future]
+                        if cancel.is_set():
+                            raise RunCancelled("Run was cancelled")
+                        try:
+                            advice = future.result()
+                            self.database.update_agent_task(task_id, "completed", advice)
+                            advice_items.append(f"{collaborator['name']} 的专业分析：\n{advice}")
+                            emit("agent.completed", {
+                                "taskId": task_id, "roleId": collaborator_id,
+                                "name": collaborator["name"],
+                            })
+                        except RunCancelled:
+                            self.database.update_agent_task(task_id, "cancelled")
+                            raise
+                        except Exception as exc:
+                            safe_error = str(exc)[:1000]
+                            self.database.update_agent_task(task_id, "failed", error=safe_error)
+                            emit("agent.failed", {
+                                "taskId": task_id, "roleId": collaborator_id,
+                                "name": collaborator["name"], "message": safe_error,
+                            })
             if advice_items:
-                messages.insert(1, SystemMessage(content="以下是团队成员的独立分析，请核验后综合使用：\n\n" + "\n\n".join(advice_items)))
+                messages.insert(1, SystemMessage(content=(
+                    "以下是只读专家 Agent 基于工作区与知识检索得到的独立分析。"
+                    "你是最终协调者，必须核验其结论；需要修改或运行命令时由你统一调用工具并遵守审批。\n\n"
+                    + "\n\n".join(advice_items)
+                )))
+            buffered_deltas: List[str] = []
             graph = SingleAgentGraph(
                 api_key=provider["apiKey"], base_url=provider["baseUrl"], model=provider["model"],
                 tools=registry.definitions(True),
-                on_delta=lambda delta: emit("model.delta", {"delta": delta}), cancel_event=cancel,
+                on_delta=(
+                    (lambda delta: buffered_deltas.append(delta))
+                    if team_task else (lambda delta: emit("model.delta", {"delta": delta}))
+                ),
+                cancel_event=cancel, max_tokens=4096,
             )
             for _step in range(12):
                 if cancel.is_set():
                     raise RunCancelled("Run was cancelled")
+                buffered_deltas.clear()
                 response = graph.invoke(messages)
                 self._record_usage(run_id, thread_id, role_id, provider, response)
                 messages.append(response)
                 tool_calls = getattr(response, "tool_calls", []) or []
                 if not tool_calls:
                     content = response.content if isinstance(response.content, str) else json.dumps(response.content, ensure_ascii=False)
+                    if team_task and specialist_ids:
+                        content = self._quality_gate(
+                            run_id, thread_id, latest_prompt, content, specialist_ids[0],
+                            role_id, provider, messages, cancel, emit,
+                        )
+                        emit("model.delta", {"delta": content})
                     self.database.add_message(thread_id, run_id, "assistant", content, role_id)
                     self.database.set_run_status(run_id, "completed")
                     emit("run.completed", {"runId": run_id, "threadId": thread_id, "content": content, "roleId": role_id, "roleName": provider["name"]})
@@ -495,7 +710,11 @@ class AgentServer:
                             messages.append(ToolMessage(content=result, tool_call_id=call_id))
                             continue
                     try:
+                        if definition.approval_required:
+                            self.database.save_checkpoint(run_id, {"sideEffectStarted": True})
                         result = registry.execute(name, arguments)
+                        if definition.approval_required:
+                            self.database.save_checkpoint(run_id, {"sideEffectsCompleted": True})
                         emit("tool.completed", {"toolCallId": call_id, "name": name, "approved": True, "result": result[:65536]})
                     except ToolError as exc:
                         result = f"Tool error: {exc}"
@@ -517,6 +736,130 @@ class AgentServer:
             with self._state_lock:
                 self._runs.pop(run_id, None)
                 self._workers.pop(run_id, None)
+
+    def _run_specialist(self, run_id: str, thread_id: str, role_id: str, provider: Dict[str, Any],
+                        conversation: List[Any], workspace: Path, knowledge: KnowledgeRepository,
+                        cancel: threading.Event) -> str:
+        """Run a bounded read-only specialist loop; side effects remain coordinator-only."""
+        registry = ToolRegistry(workspace, knowledge_search=knowledge.format_results)
+        system = (
+            f"你是 WorkBee 专家 Agent {provider['name']}。职责：{provider.get('description', '')}。"
+            f"技能：{'、'.join(provider.get('skills', [])) or '通用分析'}。"
+            "独立分析当前任务，主动使用只读工具核验工作区事实。优先使用 search_knowledge 跨文件检索，"
+            "必要时再读取具体文件。不得提出或执行写文件、命令、GitHub 修改等副作用操作。"
+            "输出给协调者的内容应包含：结论、证据路径与行号、风险或待确认项、建议动作。"
+        )
+        messages: List[Any] = [SystemMessage(content=system), *conversation]
+        graph = SingleAgentGraph(
+            api_key=provider["apiKey"], base_url=provider["baseUrl"], model=provider["model"],
+            tools=registry.definitions(False), on_delta=lambda _delta: None,
+            cancel_event=cancel, streaming=False, max_tokens=1600,
+        )
+        for step in range(5):
+            if cancel.is_set():
+                raise RunCancelled("Run was cancelled")
+            response = graph.invoke(messages)
+            self._record_usage(run_id, thread_id, role_id, provider, response)
+            messages.append(response)
+            tool_calls = getattr(response, "tool_calls", []) or []
+            if not tool_calls:
+                return response.content if isinstance(response.content, str) else json.dumps(response.content, ensure_ascii=False)
+            for call in tool_calls:
+                call_id = call.get("id") or f"specialist-{role_id}-{step}"
+                name = str(call.get("name") or "")
+                arguments = call.get("args", {})
+                try:
+                    definition = registry.describe(name)
+                    if definition.approval_required:
+                        raise ToolError("Specialist agents may use read-only tools only")
+                    result = registry.execute(name, arguments)
+                except ToolError as exc:
+                    result = f"Tool error: {exc}"
+                messages.append(ToolMessage(content=result[:65536], tool_call_id=call_id))
+        raise RuntimeError(f"专家 Agent {provider['name']} 超过 5 步只读工具限制")
+
+    def _quality_gate(self, run_id: str, thread_id: str, task: str, draft: str, reviewer_id: str,
+                      coordinator_id: str, coordinator: Dict[str, Any], messages: List[Any], cancel: threading.Event,
+                      emit: Any) -> str:
+        """Use a separate bounded Agent to review the draft, then let the coordinator repair it once."""
+        reviewer = self.providers[reviewer_id]
+        quality_task_id = self.database.create_agent_task(
+            run_id, reviewer_id, f"{reviewer['name']} · 质检", "核验最终答案的事实依据、任务覆盖与风险披露"
+        )
+        self.database.update_agent_task(quality_task_id, "running")
+        emit("quality.started", {"taskId": quality_task_id, "roleId": reviewer_id, "name": reviewer["name"]})
+        try:
+            graph = SingleAgentGraph(
+                api_key=reviewer["apiKey"], base_url=reviewer["baseUrl"], model=reviewer["model"], tools=[],
+                on_delta=lambda _delta: None, cancel_event=cancel, streaming=False,
+                temperature=0, timeout=45, max_retries=1, max_tokens=512,
+            )
+            review_response = graph.invoke([
+                SystemMessage(content=(
+                    "你是独立交付质检 Agent。检查答案是否覆盖任务、是否把猜测当事实、"
+                    "涉及工作区事实时是否给出可核验路径或证据、是否遗漏风险。"
+                    "只输出 JSON：{\"pass\":true|false,\"issues\":[\"具体问题\"]}。最多 5 个问题。"
+                )),
+                HumanMessage(content=f"原任务：\n{task[:4000]}\n\n待检答案：\n{draft[:16000]}"),
+            ])
+            self._record_usage(run_id, thread_id, reviewer_id, reviewer, review_response)
+            review_text = review_response.content if isinstance(review_response.content, str) else json.dumps(review_response.content, ensure_ascii=False)
+            parsed = json.loads(re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", review_text, flags=re.IGNORECASE))
+            issues = parsed.get("issues", []) if isinstance(parsed, dict) else []
+            passed = isinstance(parsed, dict) and parsed.get("pass") is True
+            issue_text = "\n".join(f"- {str(item)[:500]}" for item in issues[:5] if str(item).strip())
+            self.database.update_agent_task(quality_task_id, "completed", review_text[:4000])
+            emit("quality.completed", {
+                "taskId": quality_task_id, "roleId": reviewer_id,
+                "passed": passed, "issueCount": len(issues[:5]),
+            })
+            if passed or not issue_text:
+                return draft
+            revision_graph = SingleAgentGraph(
+                api_key=coordinator["apiKey"], base_url=coordinator["baseUrl"], model=coordinator["model"], tools=[],
+                on_delta=lambda _delta: None, cancel_event=cancel, streaming=False,
+                temperature=0.1, timeout=60, max_retries=1, max_tokens=4096,
+            )
+            revision = revision_graph.invoke([
+                *messages,
+                AIMessage(content=draft),
+                SystemMessage(content=(
+                    "独立质检发现以下问题。只修复这些问题并输出完整最终答案；"
+                    "不得声称执行新的工具或补造证据。\n" + issue_text
+                )),
+            ])
+            self._record_usage(run_id, thread_id, coordinator_id, coordinator, revision)
+            return revision.content if isinstance(revision.content, str) else json.dumps(revision.content, ensure_ascii=False)
+        except RunCancelled:
+            self.database.update_agent_task(quality_task_id, "cancelled")
+            raise
+        except Exception as exc:
+            self.database.update_agent_task(quality_task_id, "failed", error=str(exc)[:1000])
+            emit("quality.failed", {"taskId": quality_task_id, "roleId": reviewer_id, "message": str(exc)[:500]})
+            return draft
+
+    def _schedule_lexical_index(self, workspace: Dict[str, Any]) -> None:
+        """Warm the no-cost local FTS index without blocking workspace selection."""
+        workspace_id = str(workspace["id"])
+        with self._state_lock:
+            if workspace_id in self._indexing_workspaces:
+                return
+            self._indexing_workspaces.add(workspace_id)
+
+        def refresh() -> None:
+            try:
+                KnowledgeRepository(
+                    self.database, workspace_id, Path(str(workspace["path"]))
+                ).index()
+            except Exception as exc:
+                self.diagnostic(f"Background knowledge indexing failed: {str(exc)[:500]}")
+            finally:
+                with self._state_lock:
+                    self._indexing_workspaces.discard(workspace_id)
+
+        threading.Thread(
+            target=refresh, name=f"aivra-index-{workspace_id[:8]}", daemon=True
+        ).start()
 
     @staticmethod
     def _needs_approval(approval_mode: str, risk: str, approval_required: bool) -> bool:

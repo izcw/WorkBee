@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aivra.local/protocol/envelope.v1.json",
-  "title": "Aivra protocol envelope v1",
+  "title": "WorkBee protocol envelope v1",
   "type": "object",
   "required": ["protocolVersion", "id", "kind", "type", "timestamp", "payload"],
   "properties": {

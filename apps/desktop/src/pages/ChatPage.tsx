@@ -11,7 +11,7 @@ import { roleAvatar } from '../data/roleAvatars';
 function Message({ role, content, roleId = 'aivra', createdAt, streaming = false, roles, messageRef }: { role: 'user' | 'assistant'; content: string; roleId?: string; createdAt?: string; streaming?: boolean; roles: RoleConfig[]; messageRef?: (node: HTMLDivElement | null) => void }) {
   const bot = role === 'assistant';
   const respondingRole = roles.find(item => item.id === roleId) || roles[0];
-  const name = bot ? respondingRole?.name || 'Aivra' : '你';
+  const name = bot ? respondingRole?.name || 'WorkBee' : '你';
   const time = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(createdAt ? new Date(createdAt) : new Date());
   return <div className={`message message-row ${bot ? 'team-message' : 'user-message'}`} ref={messageRef}>
     <Avatar image={bot ? roleAvatar(respondingRole) : undefined} kind={bot ? 'cat' : 'yellow'} size={30}/>
@@ -24,7 +24,7 @@ function Message({ role, content, roleId = 'aivra', createdAt, streaming = false
 function messageSummary(message: ThreadMessage) {
   const text = message.content.replace(/\s+/g, ' ').trim() || '空消息';
   const summary = text.length > 20 ? `${text.slice(0, 20)}…` : text;
-  return `${message.role === 'user' ? '你' : 'Aivra'}：${summary}`;
+  return `${message.role === 'user' ? '你' : 'WorkBee'}：${summary}`;
 }
 
 function ApprovalCards() {
@@ -48,7 +48,7 @@ function readTaskRecords(key: string): TaskRecord[] {
 }
 
 export function ChatPage() {
-  const { workspace, runtime, roles, selectedRoleId, selectedRoleIds, selectRole, workflows, activeWorkflowId, setActiveWorkflow, addWorkflow, removeWorkflow, reorderWorkflows, pendingPrompt, clearPendingPrompt, draft, setDraft, messages, streaming, respondingRoleId, selectingRole, activeRun, error, approvals, mode, approvalMode, setMode, setApprovalMode, selectWorkspace, send, cancel } = useAgent();
+  const { workspace, runtime, roles, selectedRoleId, selectedRoleIds, selectRole, workflows, activeWorkflowId, setActiveWorkflow, addWorkflow, removeWorkflow, reorderWorkflows, pendingPrompt, clearPendingPrompt, draft, setDraft, messages, streaming, respondingRoleId, selectingRole, activeRun, recoverableRuns, error, approvals, mode, approvalMode, setMode, setApprovalMode, selectWorkspace, send, resumeRun, cancel } = useAgent();
   const messagesRef = useRef<HTMLDivElement>(null);
   const messageNodesRef = useRef(new Map<string, HTMLDivElement>());
   const followLatestRef = useRef(true);
@@ -62,6 +62,7 @@ export function ChatPage() {
   const [draggedWorkflowId, setDraggedWorkflowId] = useState('');
   const pendingSendingRef = useRef('');
   const scheduledRunRef = useRef(false);
+  const interruptedRun = recoverableRuns.find(run => run.workspace_id === workspace?.id);
 
   useEffect(() => {
     if (!pendingPrompt || !runtime.ready || activeRun || pendingSendingRef.current === pendingPrompt) return;
@@ -201,6 +202,12 @@ export function ChatPage() {
       followLatestRef.current = atLatest; setShowLatest(!atLatest);
     }}>
       {!workspace && <section className="agent-onboarding"><div className="onboarding-icon"><FileCode2 size={28}/></div><h2>开始一个新项目</h2><p>普通问答不需要选择文件夹。只有需要读取或修改你电脑里的现有内容时，再添加本地文件夹即可。</p><button onClick={selectWorkspace}><FolderOpen size={16}/>添加本地文件夹</button></section>}
+      {interruptedRun && !activeRun && <Card className={`recovery-card ${interruptedRun.safeToResume ? '' : 'unsafe'}`}>
+        <div><strong>{interruptedRun.safeToResume ? '发现未完成的本地任务' : '任务中断，需人工检查'}</strong><span>{interruptedRun.title}</span></div>
+        {interruptedRun.safeToResume
+          ? <button onClick={() => resumeRun(interruptedRun.id)}>安全续跑</button>
+          : <small>该任务此前已执行过可能产生副作用的工具，为避免重复写入，WorkBee 不会自动重放。</small>}
+      </Card>}
       {workspace && messages.length === 0 && !activeRun && <section className="agent-empty"><h2>准备好了</h2><p>可以试试：“先阅读 README，然后告诉我这个项目的结构和下一步建议。”</p></section>}
       {messages.map(message => <Message key={message.id} role={message.role} roleId={message.role_id} createdAt={message.created_at} content={message.content} roles={roles} messageRef={node => {
         if (node) messageNodesRef.current.set(message.id, node);

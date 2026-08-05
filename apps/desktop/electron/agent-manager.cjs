@@ -16,11 +16,13 @@ function now() { return new Date().toISOString(); }
 function id() { return crypto.randomUUID(); }
 
 class AgentManager extends EventEmitter {
-  constructor({ app, getProviderConfigs, getGithubMcpToken }) {
+  constructor({ app, getProviderConfigs, getGithubMcpToken, getEmbeddingProvider, getMcpServers }) {
     super();
     this.app = app;
     this.getProviderConfigs = getProviderConfigs;
     this.getGithubMcpToken = typeof getGithubMcpToken === 'function' ? getGithubMcpToken : async () => '';
+    this.getEmbeddingProvider = typeof getEmbeddingProvider === 'function' ? getEmbeddingProvider : async () => null;
+    this.getMcpServers = typeof getMcpServers === 'function' ? getMcpServers : async () => [];
     this.child = null;
     this.ready = false;
     this.stopping = false;
@@ -72,12 +74,18 @@ class AgentManager extends EventEmitter {
     const launch = this._resolveCommand();
     const providers = await this.getProviderConfigs();
     const githubMcpToken = await this.getGithubMcpToken();
+    const embeddingProvider = await this.getEmbeddingProvider();
+    const mcpServers = await this.getMcpServers();
     const env = {
       PATH: process.env.PATH || '', HOME: process.env.HOME || '', LANG: process.env.LANG || 'en_US.UTF-8',
       TMPDIR: process.env.TMPDIR || '', PYTHONUNBUFFERED: '1', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8',
       AIVRA_DATA_DIR: this.app.getPath('userData'), AIVRA_MODEL: 'deepseek-v4-flash',
       AIVRA_BASE_URL: 'https://api.deepseek.com', AIVRA_ROLE_PROVIDERS: JSON.stringify(providers),
       ...(githubMcpToken ? { AIVRA_GITHUB_MCP_TOKEN: githubMcpToken } : {}),
+      ...(embeddingProvider?.apiKey ? { AIVRA_EMBEDDING_PROVIDER: JSON.stringify(embeddingProvider) } : {}),
+      ...((mcpServers.length || process.env.AIVRA_MCP_SERVERS) ? {
+        AIVRA_MCP_SERVERS: mcpServers.length ? JSON.stringify(mcpServers) : process.env.AIVRA_MCP_SERVERS,
+      } : {}),
     };
     this.emit('status', { status: 'starting', ready: false });
     const child = spawn(launch.command, launch.args, {

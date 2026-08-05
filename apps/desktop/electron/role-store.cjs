@@ -5,7 +5,7 @@ const { randomUUID } = require('node:crypto');
 const ROLE_STORE_VERSION = 5;
 const DEFAULT_ROLES = [
   {
-    id: 'aivra', name: 'Aivra', role: '全能统筹 Agent', modelId: 'deepseek-default', avatar: 'builtin:aivra',
+    id: 'aivra', name: 'BeeYo', role: '全能统筹 Agent', modelId: 'deepseek-default', avatar: 'builtin:aivra',
     description: '负责全盘统筹、需求澄清、任务规划和落地交付。能够在授权工作区内主动读取、创建和修改文件，协调专业角色完成开发、设计、办公、研究和结果复核。',
     skills: ['全局规划与执行', '文件读写与整理', '软件开发与测试', '产品与设计协作', '文档与办公处理', '研究与数据分析'],
     knowledge: ['aivra-working-principles', 'planning-delivery-playbook'],
@@ -94,7 +94,7 @@ class RoleStore {
 
   async list() {
     const roles = await this._read();
-    const models = await this.modelStore.list();
+    const models = (await this.modelStore.list()).filter(model => model.purpose !== 'embedding');
     return roles.map(role => {
       const model = models.find(item => item.id === role.modelId) || models[0];
       return { ...role, modelId: model.id, modelName: model.name, baseUrl: model.baseUrl, model: model.model, keyAvailable: model.keyAvailable };
@@ -108,7 +108,8 @@ class RoleStore {
     let index = roles.findIndex(role => role.id === id);
     const existing = index >= 0 ? roles[index] : null;
     const modelId = String(input.modelId || existing?.modelId || '');
-    if (!await this.modelStore.get(modelId)) throw new Error('请选择已添加的模型');
+    const selectedModel = await this.modelStore.get(modelId);
+    if (!selectedModel || selectedModel.purpose === 'embedding') throw new Error('请选择已添加的对话模型');
     const name = String(input.name ?? existing?.name ?? '').trim().slice(0, 80);
     const role = String(input.role ?? existing?.role ?? '').trim().slice(0, 80);
     if (!name || !role) throw new Error('请填写角色名称和职责');

@@ -43,6 +43,7 @@ type AgentContextValue = {
   respondingRoleId: string;
   selectingRole: boolean;
   activeRun?: string;
+  recoverableRuns: RecoverableRun[];
   error?: string;
   approvals: Approval[];
   activity: Activity[];
@@ -54,6 +55,7 @@ type AgentContextValue = {
   selectModel(modelId: string): Promise<void>;
   selectWorkspace(): Promise<void>;
   createProject(prompt?: string): Promise<void>;
+  createProjectWithName(name: string): Promise<void>;
   openProject(id: string): Promise<void>;
   newProjectThread(projectId: string): Promise<void>;
   renameProject(projectId: string, name: string): Promise<void>;
@@ -62,6 +64,7 @@ type AgentContextValue = {
   openThread(id: string): Promise<void>;
   newThread(): void;
   send(prompt: string): Promise<void>;
+  resumeRun(runId: string): Promise<void>;
   cancel(): Promise<void>;
   resolveApproval(id: string, approved: boolean): Promise<void>;
   createModel(input: ModelInput): Promise<ModelConfig>;
@@ -72,9 +75,9 @@ type AgentContextValue = {
   deleteRole(id: string): Promise<void>;
 };
 
-const defaultModel: ModelConfig = { id: 'deepseek-default', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', keyAvailable: false, maskedKey: '' };
+const defaultModel: ModelConfig = { id: 'deepseek-default', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', purpose: 'chat', keyAvailable: false, maskedKey: '' };
 const defaultRole: RoleConfig = {
-  id: 'aivra', name: 'Aivra', role: '全能统筹 Agent', modelId: defaultModel.id, modelName: defaultModel.name,
+  id: 'aivra', name: 'BeeYo', role: '全能统筹 Agent', modelId: defaultModel.id, modelName: defaultModel.name,
   baseUrl: defaultModel.baseUrl, model: defaultModel.model, keyAvailable: false,
   description: '全盘统筹并完成文件处理、软件开发、产品设计、办公文档、研究分析和结果验证。',
   skills: ['全局规划与执行', '文件读写与整理', '软件开发与测试', '产品与设计协作', '文档与办公处理', '研究与数据分析'],
@@ -163,6 +166,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [respondingRoleId, setRespondingRoleId] = useState('aivra');
   const [selectingRole, setSelectingRole] = useState(false);
   const [activeRun, setActiveRun] = useState<string>();
+  const [recoverableRuns, setRecoverableRuns] = useState<RecoverableRun[]>([]);
   const [error, setError] = useState<string>();
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
@@ -216,13 +220,15 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     Promise.all([
       initialRuntime, api.roles.list(), api.models.list(), api.agent.usageSummary().catch(() => emptyUsage),
       api.agent.listWorkspaces().catch(() => [] as Workspace[]), api.agent.listThreads().catch(() => [] as ThreadSummary[]),
-    ]).then(async ([status, configuredRoles, configuredModels, currentUsage, savedProjects, savedThreads]) => {
+      initialRuntime.then(status => status.ready ? api.agent.listRecoverableRuns().catch(() => [] as RecoverableRun[]) : [] as RecoverableRun[]),
+    ]).then(async ([status, configuredRoles, configuredModels, currentUsage, savedProjects, savedThreads, interruptedRuns]) => {
       setRuntime({ status: String(status.status || 'offline'), ready: Boolean(status.ready), message: status.message ? String(status.message) : undefined });
       setRoles(configuredRoles);
       setModels(configuredModels);
       setUsage(currentUsage);
       setKeyAvailable(Boolean(configuredRoles.find(role => role.id === 'aivra')?.keyAvailable));
       setProjects(savedProjects); setProjectThreads(savedThreads);
+      setRecoverableRuns(interruptedRuns);
       const savedProjectId = localStorage.getItem('aivra.activeProject.v1');
       const restoredProject = savedProjects.find(project => project.id === savedProjectId) || savedProjects[0];
       if (restoredProject) {
@@ -264,11 +270,29 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       } else if (event.type === 'agent.completed') {
         const roleId = String(payload.roleId || event.id);
         setActivity(items => items.map(item => item.id === `agent-${roleId}` ? { ...item, label: `${String(payload.name)} 已完成分析`, state: 'done' } : item));
+      } else if (event.type === 'agent.failed') {
+        const roleId = String(payload.roleId || event.id);
+        setActivity(items => items.map(item => item.id === `agent-${roleId}` ? { ...item, label: `${String(payload.name)} 分析失败`, detail: String(payload.message || ''), state: 'error' } : item));
+      } else if (event.type === 'quality.started') {
+        setActivity(items => [...items.slice(-7), { id: `quality-${event.runId}`, label: `${String(payload.name)} 正在独立质检`, detail: '事实依据 · 任务覆盖 · 风险披露', state: 'running' }]);
+      } else if (event.type === 'quality.completed') {
+        const passed = payload.passed === true;
+        setActivity(items => items.map(item => item.id === `quality-${event.runId}` ? { ...item, label: passed ? '独立质检通过' : '质检发现问题，已交由协调者修订', detail: `${Number(payload.issueCount || 0)} 个问题`, state: 'done' } : item));
+      } else if (event.type === 'quality.failed') {
+        setActivity(items => items.map(item => item.id === `quality-${event.runId}` ? { ...item, label: '独立质检未完成', detail: String(payload.message || ''), state: 'error' } : item));
+      } else if (event.type === 'knowledge.indexed') {
+        setActivity(items => [...items.slice(-7), {
+          id: `knowledge-${event.runId}`,
+          label: '本地知识索引已更新',
+          detail: `${payload.retrievalMode === 'hybrid' ? '向量 + FTS5' : 'FTS5'} · ${Number(payload.files || 0)} 个文件，更新 ${Number(payload.indexed || 0)} 个`,
+          state: 'done',
+        }]);
       } else if (event.type === 'team.selected') {
         const names = Array.isArray(payload.names) ? payload.names.map(String).join('、') : '';
         if (payload.answerRoleId) setRespondingRoleId(String(payload.answerRoleId));
         setSelectingRole(false);
-        setActivity(items => [...items.map(item => item.id === `team-selecting-${event.runId}` ? { ...item, state: 'done' as const, label: '已智能选择角色', detail: names } : item).slice(-7), { id: `team-${event.runId}`, label: '当前回答角色', detail: names, state: 'done' }]);
+        const collaborating = payload.mode === 'collaboration';
+        setActivity(items => [...items.map(item => item.id === `team-selecting-${event.runId}` ? { ...item, state: 'done' as const, label: collaborating ? '协作团队已组建' : '已智能选择角色', detail: names } : item).slice(-7), { id: `team-${event.runId}`, label: collaborating ? '多智能体协作' : '当前回答角色', detail: names, state: 'done' }]);
       } else if (event.type === 'approval.required') {
         setApprovals(items => [...items, {
           approvalId: String(payload.approvalId), runId: event.runId, name: String(payload.name),
@@ -280,6 +304,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         if (completedThread) loadThread(completedThread).catch(reason => setError(String(reason)));
         refreshThreads().catch(() => undefined);
         refreshUsage().catch(() => undefined); refreshFileTree().catch(() => undefined);
+        if (event.runId) setRecoverableRuns(items => items.filter(item => item.id !== event.runId));
       } else if (event.type === 'run.failed' || event.type === 'run.cancelled') {
         setActiveRun(undefined); setStreaming(''); setApprovals([]); setSelectingRole(false);
         if (event.type === 'run.failed') setError(String(payload.message || 'Agent 运行失败'));
@@ -291,7 +316,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   }, [api, loadThread, refreshThreads, refreshUsage, refreshFileTree]);
 
   const selectWorkspace = async () => {
-    if (!api) { setError('请在 Aivra 桌面应用中使用本地 Agent'); return; }
+    if (!api) { setError('请在 WorkBee 桌面应用中使用本地 Agent'); return; }
     setError(undefined);
     const selected = await api.agent.selectWorkspace();
     if (!selected) return;
@@ -303,9 +328,9 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     setThreads(currentThreads); setProjectThreads(allThreads); setProjects(savedProjects); setFileTree(tree);
   };
 
-  const provisionProject = async () => {
-    if (!api) throw new Error('请在 Aivra 桌面应用中创建项目');
-    const project = await api.agent.createProject();
+  const provisionProject = async (name = '') => {
+    if (!api) throw new Error('请在 WorkBee 桌面应用中创建项目');
+    const project = await api.agent.createProject(name.trim() || undefined);
     setWorkspace(project); workspaceRef.current = project; setThreadId(undefined); setMessages([]); setActivity([]); setFileTree([]);
     const preferences = { roleIds: selectedRoleIds, approvalMode };
     saveProjectPreferences(project.id, preferences); projectPreferencesRef.current = { ...projectPreferencesRef.current, [project.id]: preferences };
@@ -322,7 +347,11 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     if (prompt.trim()) { setDraft(prompt); setPendingPrompt(prompt.trim()); }
     else { setDraft(''); setPendingPrompt(''); }
   };
-
+  const createProjectWithName = async (name: string) => {
+    setError(undefined);
+    await provisionProject(name);
+    setDraft(''); setPendingPrompt('');
+  };
   const openProject = async (id: string) => {
     if (!api) return;
     const project = projectsRef.current.find(item => item.id === id);
@@ -405,7 +434,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   };
   const send = async (prompt: string) => {
     const reject = (message: string) => { setError(message); throw new Error(message); };
-    if (!api) return reject('请在 Aivra 桌面应用中使用本地 Agent');
+    if (!api) return reject('请在 WorkBee 桌面应用中使用本地 Agent');
     try {
       if (!runtime.ready) setRuntime({ status: 'starting', ready: false, message: '正在启动 Agent…' });
       const status = await api.agent.ensureReady();
@@ -440,6 +469,21 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     }
   };
   const cancel = async () => { if (api && activeRun) await api.agent.cancelRun(activeRun); };
+  const resumeRun = async (runId: string) => {
+    if (!api || activeRun) return;
+    setError(undefined); setStreaming(''); setActivity([]); setSelectingRole(true);
+    try {
+      const resumed = await api.agent.resumeRun(runId);
+      setThreadId(resumed.threadId); setActiveRun(resumed.runId);
+      setRecoverableRuns(items => items.filter(item => item.id !== runId));
+      localStorage.setItem('aivra.activeThread.v1', resumed.threadId);
+      await loadThread(resumed.threadId);
+    } catch (reason) {
+      setSelectingRole(false);
+      setError(reason instanceof Error ? reason.message : String(reason));
+      throw reason;
+    }
+  };
   const resolveApproval = async (id: string, approved: boolean) => {
     if (!api) return;
     await api.agent.resolveApproval({ approvalId: id, approved });
@@ -560,7 +604,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   const selectedRole = roles.find(role => role.id === selectedRoleId) || defaultRole;
 
-  return <AgentContext.Provider value={{ runtime, keyAvailable, models, usage, fileTree, refreshFileTree, roles, selectedRoleId, selectedRoleIds, selectedRole, selectedTeamRoleId, setSelectedTeamRoleId, workflows, activeWorkflowId, setActiveWorkflow, addWorkflow, removeWorkflow, updateWorkflow, reorderWorkflows, toggleWorkflowDocument, pendingPrompt, startNewConversation, clearPendingPrompt: () => setPendingPrompt(''), draft, setDraft, workspace, projects, threads, projectThreads, threadId, messages, streaming, respondingRoleId, selectingRole, activeRun, error, approvals, activity, mode, approvalMode, setMode, setApprovalMode, selectRole, selectModel, selectWorkspace, createProject, openProject, newProjectThread, renameProject, deleteProject, deleteThread, openThread, newThread, send, cancel, resolveApproval, createModel, updateModel, deleteModel, testModel, saveRole, deleteRole }}>{children}</AgentContext.Provider>;
+  return <AgentContext.Provider value={{ runtime, keyAvailable, models, usage, fileTree, refreshFileTree, roles, selectedRoleId, selectedRoleIds, selectedRole, selectedTeamRoleId, setSelectedTeamRoleId, workflows, activeWorkflowId, setActiveWorkflow, addWorkflow, removeWorkflow, updateWorkflow, reorderWorkflows, toggleWorkflowDocument, pendingPrompt, startNewConversation, clearPendingPrompt: () => setPendingPrompt(''), draft, setDraft, workspace, projects, threads, projectThreads, threadId, messages, streaming, respondingRoleId, selectingRole, activeRun, recoverableRuns, error, approvals, activity, mode, approvalMode, setMode, setApprovalMode, selectRole, selectModel, selectWorkspace, createProject, createProjectWithName, openProject, newProjectThread, renameProject, deleteProject, deleteThread, openThread, newThread, send, resumeRun, cancel, resolveApproval, createModel, updateModel, deleteModel, testModel, saveRole, deleteRole }}>{children}</AgentContext.Provider>;
 }
 
 function summarizeTool(payload: Record<string, unknown>) {

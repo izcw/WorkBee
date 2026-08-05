@@ -1,6 +1,6 @@
 {
   "name": "@aivra/desktop",
-  "description": "Aivra desktop agent workspace",
+  "description": "WorkBee desktop agent workspace",
   "author": "Aivra",
   "private": true,
   "version": "0.1.0",
@@ -36,7 +36,7 @@
   },
   "build": {
     "appId": "com.aivra.desktop",
-    "productName": "Aivra",
+    "productName": "WorkBee",
     "electronDist": "node_modules/electron/dist",
     "icon": "electron/Aivra.png",
     "directories": {
@@ -57,7 +57,7 @@
       "icon": "electron/Aivra.png",
       "category": "public.app-category.productivity",
       "target": "dmg",
-      "artifactName": "Aivra-Agent-v${version}-macos-${arch}.${ext}"
+      "artifactName": "WorkBee-Agent-v${version}-macos-${arch}.${ext}"
     },
     "win": {
       "icon": "electron/Aivra.png",
@@ -65,10 +65,10 @@
         "nsis",
         "zip"
       ],
-      "artifactName": "Aivra-Agent-v${version}-windows-portable.${ext}"
+      "artifactName": "WorkBee-Agent-v${version}-windows-portable.${ext}"
     },
     "nsis": {
-      "artifactName": "Aivra-Agent-Setup-v${version}-windows-${arch}.${ext}"
+      "artifactName": "WorkBee-Agent-Setup-v${version}-windows-${arch}.${ext}"
     },
     "linux": {
       "icon": "electron/Aivra.png",

@@ -6,7 +6,8 @@ const test = require('node:test');
 
 const { ModelStore } = require('../electron/model-store.cjs');
 const { RoleStore } = require('../electron/role-store.cjs');
-const { testOpenAIConnection } = require('../electron/provider-test.cjs');
+const { testOpenAIConnection, testEmbeddingConnection } = require('../electron/provider-test.cjs');
+const { McpStore } = require('../electron/mcp-store.cjs');
 
 test('models support CRUD and roles reference a configured model', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-models-'));
@@ -33,6 +34,9 @@ test('models support CRUD and roles reference a configured model', async t => {
   assert.deepEqual(providers.aivra.skills, ['文件读写与整理']);
   assert.deepEqual(providers.aivra.knowledge, ['aivra-working-principles']);
   assert.equal(await roles.usesModel(created.id), true);
+  const embedding = await models.create({ name: 'Embedding', baseUrl: 'https://example.com/v1', model: 'embed-small', purpose: 'embedding', apiKey: 'embed-key' });
+  assert.equal((await models.embeddingProvider()).id, embedding.id);
+  await assert.rejects(roles.save({ name: 'Invalid', role: 'Invalid', modelId: embedding.id }), /对话模型/);
 
   const added = await roles.save({ name: 'Noah', role: '内容编辑', avatar: 'default:4', modelId: created.id, description: '负责内容编辑。' });
   assert.ok(added.id);
@@ -58,7 +62,7 @@ test('legacy team data is reset once to the five default roles', async t => {
 
   const migrated = await roles.list();
   assert.deepEqual(migrated.map(role => role.id), ['aivra', 'nova', 'mira', 'sage', 'lyra']);
-  assert.equal(migrated[0].name, 'Aivra');
+  assert.equal(migrated[0].name, 'BeeYo');
   assert.equal(migrated[0].role, '全能统筹 Agent');
   assert.ok(migrated[0].skills.includes('软件开发与测试'));
   assert.equal(migrated[0].avatar, 'default:3');
@@ -122,4 +126,37 @@ test('connection test redacts a key echoed by a provider error', async () => {
     }),
     error => !error.message.includes('sk-secret-value') && error.message.includes('[REDACTED]'),
   );
+});
+
+test('embedding connection test validates the vector response', async () => {
+  let request;
+  const result = await testEmbeddingConnection({
+    baseUrl: 'https://api.example.com/v1', model: 'embed-model', apiKey: 'embed-key',
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return { ok: true, status: 200, json: async () => ({ data: [{ embedding: [0.1, 0.2, 0.3] }] }) };
+    },
+  });
+  assert.equal(request.url, 'https://api.example.com/v1/embeddings');
+  assert.equal(result.message, '连接成功 · 3 维');
+});
+
+test('MCP configs persist locally while tokens stay in secure storage', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-mcp-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const keys = new Map();
+  const secureStore = {
+    getApiKey: async id => keys.get(id) || '',
+    hasApiKey: async id => keys.has(id),
+    setApiKey: async (id, value) => value ? keys.set(id, value) : keys.delete(id),
+  };
+  const store = new McpStore({ getPath: () => directory }, secureStore);
+  const saved = await store.save({ name: 'Local Docs', url: 'http://127.0.0.1:3333/mcp', token: 'secret' });
+  assert.equal(saved.id, 'local_docs');
+  assert.equal(saved.tokenAvailable, true);
+  assert.equal((await fs.readFile(path.join(directory, 'mcp-servers.json'), 'utf8')).includes('secret'), false);
+  assert.equal((await store.forAgent())[0].token, 'secret');
+  assert.equal((await store.list())[0].token, undefined);
+  assert.deepEqual(await store.delete(saved.id), { deleted: true });
+  assert.equal(keys.size, 0);
 });

@@ -4,6 +4,7 @@ import platform
 import pytest
 
 from aivra_agent.tools import ToolError, ToolRegistry
+from aivra_agent.tools.github_mcp import RemoteMcpClient
 
 
 def test_read_file_stays_in_workspace(tmp_path: Path):
@@ -44,6 +45,25 @@ def test_side_effect_tools_require_approval(tmp_path: Path):
     assert "run_command" in {item["function"]["name"] for item in registry.definitions(True)}
     assert registry.describe("run_command").approval_required is True
     assert registry.describe("write_file").risk == "medium"
+
+
+def test_generic_remote_mcp_tools_are_namespaced_and_risk_mapped(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setattr(RemoteMcpClient, "list_tools", lambda _self: [
+        {"name": "search", "description": "Search", "inputSchema": {"type": "object"}, "annotations": {"readOnlyHint": True}},
+        {"name": "delete-item", "description": "Delete", "inputSchema": {"type": "object"}, "annotations": {"destructiveHint": True}},
+    ])
+    monkeypatch.setattr(RemoteMcpClient, "call_tool", lambda _self, name, arguments: f"{name}:{arguments.get('id', '')}")
+
+    registry = ToolRegistry(workspace, mcp_servers=[{
+        "id": "notion", "name": "Notion", "url": "https://mcp.example.com", "token": "secret",
+    }])
+
+    assert registry.describe("mcp_notion_search").approval_required is False
+    assert registry.describe("mcp_notion_delete_item").risk == "high"
+    assert registry.describe("mcp_notion_delete_item").approval_required is True
+    assert registry.execute("mcp_notion_search", {"id": "123"}) == "search:123"
 
 
 @pytest.mark.skipif(platform.system() != "Darwin", reason="Seatbelt sandbox is macOS-specific")

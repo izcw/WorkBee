@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-const chars = "AIvraTeam01";
+const chars = "WorkBeeTeam01";
 
 export function InteractiveDigits() {
   const canvasRef = useRef<HTMLCanvasElement>(null);

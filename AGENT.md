@@ -1,6 +1,6 @@
-# Aivra Agent Development Guide
+# WorkBee Agent Development Guide
 
-本文件定义 Aivra 的目标架构、工程边界和 AI 编码代理的工作规则。修改代码前必须先核验仓库现状，不得把目标设计当成已实现功能。
+本文件定义 WorkBee 的目标架构、工程边界和 AI 编码代理的工作规则。修改代码前必须先核验仓库现状，不得把目标设计当成已实现功能。
 
 ## 1. 如何使用本文件
 
@@ -21,16 +21,16 @@
 
 ## 2. 产品定位与原则
 
-Aivra 是本地优先的桌面 AI 智能体工作空间。用户在 Electron 应用中选择本地工作区，由随应用安装的 Python Agent 调用模型、读取或修改项目文件、执行 Git/Shell 工具，并通过 React 界面查看过程、审批和结果。
+WorkBee 是本地优先的桌面 AI 智能体工作空间。用户在 Electron 应用中选择本地工作区，由随应用安装的 Python Agent 调用模型、读取或修改项目文件、执行 Git/Shell 工具，并通过 React 界面查看过程、审批和结果。
 
 核心原则：
 
 1. 本地执行：Agent 工作流和工作区工具在用户电脑运行。
-2. 最小权限：Renderer、Preload、Main、Agent 和 Server 权限逐层收敛。
+2. 最小权限：Renderer、Preload、Main 和 Agent 权限逐层收敛。
 3. 明确审批：高风险或不可逆副作用必须在执行前由用户确认。
 4. 可恢复：任务、checkpoint、审批与工具结果可以在应用重启后恢复。
 5. 协议优先：跨进程消息先定义 Schema，再分别实现 TypeScript/Python 类型。
-6. 云端克制：Aivra Server 提供平台能力，不接管本地 Agent 执行。
+6. 本地闭环：不依赖 WorkBee 云端 Server；模型与外部 MCP 由用户显式配置并直接连接。
 
 ## 3. 仓库当前状态
 
@@ -38,16 +38,15 @@ Aivra 是本地优先的桌面 AI 智能体工作空间。用户在 Electron 应
 
 | 路径 | 状态 | 已实现 | 未实现 |
 |---|---|---|---|
-| `apps/desktop/` | 首个可用闭环 | React Agent 工作台、Electron Agent 进程管理/业务 IPC/安全存储、Python LangGraph Agent、SQLite、受工作区限制的文件/Git 工具、macOS Seatbelt 命令沙箱与审批、模型 CRUD/角色模型绑定、PyInstaller/Electron Builder | 知识库、Windows/Linux 命令沙箱、签名/自动更新、多 Agent |
-| `apps/website/` | 官网原型 | vinext/Vite 页面、Cloudflare Worker/Sites 配置、生产构建 | 正式下载地址、Aivra Server 集成；现有 lint/test 尚未全绿 |
-| `apps/server/` | 边界占位 | README 说明 | Fastify Server、账号、市场和订阅全部能力 |
+| `apps/desktop/` | 首个可用闭环 | React Agent 工作台、Electron Agent 进程管理/业务 IPC/安全存储、Python LangGraph Agent、SQLite、安全续跑、受工作区限制的文件/Git 工具、macOS Seatbelt 命令沙箱与审批、有界多 Agent 协作与独立质检、Embedding + FTS5 混合检索、本地管理的通用 MCP Tool 注册、PyInstaller/Electron Builder | 本地 Embedding、跨编码器重排、Windows/Linux 命令沙箱、签名/自动更新 |
+| `apps/website/` | 官网原型 | vinext/Vite 页面、Cloudflare Worker/Sites 配置、生产构建 | 正式下载地址；现有 lint/test 尚未全绿 |
 | `packages/protocol/` | v1 最小协议 | Envelope/消息目录 JSON Schema、TS 类型、协议测试 | 细化每种 payload Schema、自动类型生成和更完整兼容 fixtures |
 
 注意：
 
 - `apps/desktop/electron/preload.cjs` 暴露白名单化的窗口、Agent、工作区、运行、审批与设置 API；没有暴露通用 IPC、文件或 Shell 能力。
 - `apps/desktop/src/pages/ChatPage.tsx` 已连接真实本地业务链路；团队、市场和文档页面仍包含演示/固定数据，不代表云端能力已经存在。
-- `apps/website/db/` 是可选 D1 脚手架，当前 hosting 配置未绑定 D1；它不是目标云端 PostgreSQL 服务。
+- `apps/website/db/` 是官网遗留的可选 D1 脚手架，当前 hosting 配置未绑定 D1，不属于桌面产品运行链路。
 - 官网生产构建当前可通过，但已有 lint 错误，且 `tests/rendered-html.test.mjs` 仍依赖缺失的 starter preview 文件；不能把“存在测试脚本”写成“测试已通过”。
 - `apps/desktop/release/`、`apps/desktop/dist/`、`apps/desktop/agent/dist/`、`apps/website/dist/` 和依赖目录是生成物，不是架构模块。
 
@@ -60,13 +59,13 @@ Aivra 是本地优先的桌面 AI 智能体工作空间。用户在 Electron 应
 1. 桌面端：Electron + React + TypeScript + Vite。
 2. 本地 Agent：Python 3.12 + LangChain + LangGraph。
 3. 本地业务数据：SQLite，由 Python Agent 单写入者管理。
-4. 云端服务：Node.js + TypeScript + Fastify + PostgreSQL。
-5. 模型请求由本地 Agent 直连模型服务，不经过 Aivra Server。
+4. 不建设 WorkBee 云端 Server；桌面端核心能力必须本地闭环。
+5. 模型请求由本地 Agent 直连用户配置的模型服务。
 6. Electron Main 与 Python Agent 使用 JSON Lines over stdin/stdout，不启动 localhost API。
 7. Python Agent 使用 PyInstaller `onedir` 打包，并随 Electron 安装。
 8. Renderer 不直接访问 Node.js、Python、SQLite、文件系统、Shell 或密钥。
-9. 项目文件、任务记录、知识库和模型密钥默认不上传 Aivra 云端。
-10. 第一阶段只实现单 Agent；多 Agent 在单 Agent 闭环稳定后再加入。
+9. 项目文件、任务记录和知识索引保存在本机；模型密钥与 MCP Token 使用系统安全存储。
+10. 多 Agent 采用有界协调模式：任务模式最多选择三个只读专家并行分析，只有协调者可以发起有副作用的工具调用。
 
 ### 仍需决策或验证
 
@@ -111,7 +110,7 @@ Aivra 是本地优先的桌面 AI 智能体工作空间。用户在 Electron 应
 - Renderer 与 Agent 之间的协议转发；
 - 原生工作区选择和系统级权限；
 - 通过操作系统安全存储保存 API Key 与登录凭证；
-- 经过约束的外部 URL 打开与云端认证请求。
+- 经过约束的外部 URL 打开与 MCP 授权请求。
 
 Main 不实现 Prompt、Tool 或 Agent 工作流，不直接写业务 SQLite。
 
@@ -127,25 +126,14 @@ Main 不实现 Prompt、Tool 或 Agent 工作流，不直接写业务 SQLite。
 
 Agent 只能接受 Main 建立的会话，并且只能操作用户授权范围。权限验证必须在 Tool 层执行，不能只依赖 Prompt。
 
-### Aivra Server
-
-负责账号、设备、市场、发布、签名元数据、订阅、订单和用户主动开启的设置同步。
-
-禁止：
-
-- 保存模型 API Key；
-- 默认保存项目正文、知识库原文、任务日志或 Prompt；
-- 代理模型请求或提供本地任务执行能力；
-- 假设可以直接访问用户电脑。
-
 ### Website
 
-只负责品牌、产品介绍、文档入口和可信下载入口。不得引用桌面端内部模块，也不得承载 Agent 或 Server 领域逻辑。
+只负责品牌、产品介绍、文档入口和可信下载入口。不得引用桌面端内部模块，也不得承载 Agent 领域逻辑。
 
 ## 6. 目标目录
 
 ```text
-Aivra/
+WorkBee/
 ├── apps/
 │   ├── desktop/
 │   │   ├── src/                    # React Renderer
@@ -161,14 +149,6 @@ Aivra/
 │   │   │   │   └── storage/        # SQLite repositories
 │   │   │   ├── tests/
 │   │   │   └── pyproject.toml
-│   │   └── package.json
-│   ├── server/
-│   │   ├── src/
-│   │   │   ├── auth/
-│   │   │   ├── devices/
-│   │   │   ├── marketplace/
-│   │   │   ├── billing/
-│   │   │   └── app.ts
 │   │   └── package.json
 │   └── website/
 ├── packages/
@@ -282,7 +262,9 @@ tool.requested / approval.required / approval.resolve / tool.completed
 → 必要时 interrupt 等待审批 → 验证结果 → 保存产物与总结
 ```
 
-单 Agent 必须先满足流式输出、工具审批、取消、崩溃恢复和端到端测试。多 Agent 后续由有界的 Team Leader 分解任务，必须限制深度、并发、预算和总运行时间，禁止递归无限委派。
+任务模式由有界的协调者选择最多三个专家并行分析；专家最多执行五轮只读工具调用，不允许递归委派或发起副作用。协调者核验专家产物后统一调用写入、命令与远程变更工具，并沿用审批、取消和工作区权限边界。
+
+工作区知识索引使用内容哈希做增量更新。配置 Embedding 模型后，以 Reciprocal Rank Fusion 融合向量相似度与 SQLite FTS5 排名；未配置或远程服务失败时退回本地检索。自动检索与 `search_knowledge` 工具都必须返回文件路径和起始行号。当前可以表述为混合检索，不应表述为跨编码器重排。
 
 ## 10. 数据与凭证
 
@@ -298,13 +280,9 @@ SQLite 由 Python Agent 单写入者管理。Renderer 和 Electron Main 通过�
 
 是否将密钥通过现有协议传给 Agent、使用额外匿名管道或 provider-scoped session token，需要在实现前做威胁建模。不得把明文密钥混入普通可持久化消息。
 
-### 云端 PostgreSQL
-
-仅保存账号、设备、会话、市场、发布、订阅和订单等平台数据。同步功能必须逐项 opt-in、可撤销，并说明上传字段与保留周期。
-
 ### 隐私表述
 
-“本地优先”与“默认不上传 Aivra 云端”不能表述为“数据永不离开设备”。模型请求会把必要上下文发送到用户选择的模型服务商；外部 Tool/Plugin 也可能外发数据，必须在权限说明和审批中明确目的地。
+“本地优先”不能表述为“数据永不离开设备”。模型请求会把必要上下文发送到用户选择的模型服务商；外部 Tool/Plugin 也可能外发数据，必须在权限说明和审批中明确目的地。
 
 ## 11. 工具与安全
 
@@ -376,7 +354,7 @@ SQLite 由 Python Agent 单写入者管理。Renderer 和 Electron Main 通过�
 7. 实现只读文件工具和路径逃逸测试。
 8. 实现需要审批的文件写入，验证取消与恢复。
 9. 完成安装包中的 Agent 定位和第一条端到端链路。
-10. 再增加 Git、Shell、知识库、Server 和多 Agent。
+10. 增加 Git、Shell、安全续跑、有界多 Agent 与独立质检、Embedding + FTS5 混合检索及本地管理的通用 MCP Tool 注册；本地 Embedding与跨编码器重排继续按独立阶段推进。
 
 第一条验收链路：
 
@@ -392,7 +370,7 @@ SQLite 由 Python Agent 单写入者管理。Renderer 和 Electron Main 通过�
 
 修改前：
 
-1. 需求属于 Renderer、Preload、Main、Agent、Server 还是 Website？
+1. 需求属于 Renderer、Preload、Main、Agent 还是 Website？
 2. 当前能力真的存在，还是只写在目标文档里？
 3. 是否跨越数据、凭证或权限边界？
 4. 是否需要先改协议 Schema 或数据库 migration？

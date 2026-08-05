@@ -7,8 +7,8 @@ import subprocess
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List
-from .github_mcp import GithubMcpClient, GithubMcpError
+from typing import Any, Callable, Dict, List, Optional
+from .github_mcp import GithubMcpClient, GithubMcpError, RemoteMcpClient
 
 
 class ToolError(RuntimeError):
@@ -26,13 +26,18 @@ class ToolDefinition:
 
 
 class ToolRegistry:
-    def __init__(self, workspace: Path, github_token: str = "") -> None:
+    def __init__(self, workspace: Path, github_token: str = "",
+                 knowledge_search: Optional[Callable[[str, int], str]] = None,
+                 mcp_servers: Optional[List[Dict[str, Any]]] = None) -> None:
         self.workspace = workspace.resolve(strict=True)
         self._tools: Dict[str, ToolDefinition] = {}
         self.github_mcp_error = ""
+        self._knowledge_search = knowledge_search
         self._register_defaults()
         if github_token:
             self._register_github_mcp(github_token)
+        for server in mcp_servers or []:
+            self._register_remote_mcp(server)
 
     def _safe_existing_path(self, relative: str) -> Path:
         if not relative or Path(relative).is_absolute():
@@ -71,6 +76,15 @@ class ToolRegistry:
         self.register("git_status", "查看工作区 Git 状态，不会修改仓库。", {
             "type": "object", "properties": {}, "additionalProperties": False
         }, "low", False, self._git_status)
+        if self._knowledge_search is not None:
+            self.register("search_knowledge", "检索当前授权工作区的本地知识索引，返回带文件路径和行号的相关片段。", {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "要检索的问题、概念、符号或错误文本"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 12, "default": 6},
+                },
+                "required": ["query"], "additionalProperties": False,
+            }, "low", False, self._search_knowledge)
         self.register("write_file", "创建或覆盖工作区内的 UTF-8 文本文件。是否需要批准由当前审批模式决定。", {
             "type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
             "required": ["path", "content"], "additionalProperties": False
@@ -108,6 +122,38 @@ class ToolRegistry:
             description = str(item.get("description") or remote_name)
             self.register(local_name, f"GitHub MCP：{description}", parameters, risk, not read_only,
                           lambda arguments, remote=remote_name: self._call_github(client, remote, arguments))
+
+    def _register_remote_mcp(self, config: Dict[str, Any]) -> None:
+        server_id = re.sub(r"[^a-zA-Z0-9_]", "_", str(config.get("id") or "")).strip("_").lower()
+        url = str(config.get("url") or "")
+        name = str(config.get("name") or server_id or "Remote")
+        if not server_id or not url.startswith(("http://", "https://")):
+            return
+        client = RemoteMcpClient(url, str(config.get("token") or ""), name)
+        try:
+            tools = client.list_tools()
+        except GithubMcpError as exc:
+            self.register(f"mcp_{server_id}_status", f"检查 {name} MCP 连接状态。", {
+                "type": "object", "properties": {}, "additionalProperties": False,
+            }, "low", False, lambda _arguments, error=str(exc): f"{name} MCP 当前不可用：{error}")
+            return
+        for item in tools[:150]:
+            remote_name = str(item["name"])
+            safe_tool = re.sub(r"[^a-zA-Z0-9_]", "_", remote_name).strip("_")
+            local_name = f"mcp_{server_id}_{safe_tool}"
+            if not safe_tool or local_name in self._tools:
+                continue
+            schema = item.get("inputSchema")
+            parameters = schema if isinstance(schema, dict) else {"type": "object", "properties": {}, "additionalProperties": False}
+            annotations = item.get("annotations") if isinstance(item.get("annotations"), dict) else {}
+            read_only = annotations.get("readOnlyHint") is True
+            destructive = annotations.get("destructiveHint") is True
+            risk = "low" if read_only else "high" if destructive else "medium"
+            description = str(item.get("description") or remote_name)
+            self.register(
+                local_name, f"{name} MCP：{description}", parameters, risk, not read_only,
+                lambda arguments, remote=remote_name, target=client: self._call_github(target, remote, arguments),
+            )
 
     @staticmethod
     def _call_github(client: GithubMcpClient, name: str, arguments: Dict[str, Any]) -> str:
@@ -184,6 +230,15 @@ class ToolRegistry:
         )
         output = (result.stdout + result.stderr).strip()
         return output[:65536] or "Working tree clean"
+
+    def _search_knowledge(self, arguments: Dict[str, Any]) -> str:
+        if self._knowledge_search is None:
+            raise ToolError("Knowledge search is unavailable")
+        query = str(arguments.get("query", "")).strip()
+        if not query:
+            raise ToolError("Knowledge search query is required")
+        limit = int(arguments.get("limit", 6))
+        return self._knowledge_search(query[:500], max(1, min(limit, 12)))
 
     def _run_command(self, arguments: Dict[str, Any]) -> str:
         command = str(arguments.get("command", "")).strip()

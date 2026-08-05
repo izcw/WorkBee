@@ -13,6 +13,7 @@ export function SettingsDialog({ close, initialSection = 'profile' }: { close: (
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
+  const [purpose, setPurpose] = useState<'chat' | 'embedding'>('chat');
   const [apiKey, setApiKey] = useState('');
   const [clearApiKey, setClearApiKey] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -24,20 +25,20 @@ export function SettingsDialog({ close, initialSection = 'profile' }: { close: (
   useEffect(() => { setSection(initialSection); }, [initialSection]);
   useEffect(() => {
     if (!editing) return;
-    setName(editing.name); setBaseUrl(editing.baseUrl); setModel(editing.model);
+    setName(editing.name); setBaseUrl(editing.baseUrl); setModel(editing.model); setPurpose(editing.purpose || 'chat');
     setApiKey(''); setClearApiKey(false); setError(''); setTestResult('');
   }, [editingId, editing]);
 
   const add = () => {
-    setEditingId(null); setName(''); setBaseUrl('https://api.deepseek.com'); setModel('');
+    setEditingId(null); setName(''); setBaseUrl('https://api.openai.com/v1'); setModel(''); setPurpose('chat');
     setApiKey(''); setClearApiKey(false); setError('');
   };
   const save = async () => {
     setSaving(true); setError('');
     try {
-      if (editingId) await updateModel({ id: editingId, name, baseUrl, model, apiKey: apiKey || undefined, clearApiKey });
+      if (editingId) await updateModel({ id: editingId, name, baseUrl, model, purpose, apiKey: apiKey || undefined, clearApiKey });
       else {
-        const created = await createModel({ name, baseUrl, model, apiKey: apiKey || undefined });
+        const created = await createModel({ name, baseUrl, model, purpose, apiKey: apiKey || undefined });
         setEditingId(created.id);
       }
       setApiKey(''); setClearApiKey(false);
@@ -54,7 +55,7 @@ export function SettingsDialog({ close, initialSection = 'profile' }: { close: (
   const testConnection = async () => {
     setTesting(true); setError(''); setTestResult('');
     try {
-      const result = await testModel({ id: editingId || undefined, name, baseUrl, model, apiKey: apiKey || undefined });
+      const result = await testModel({ id: editingId || undefined, name, baseUrl, model, purpose, apiKey: apiKey || undefined });
       setTestResult(`${result.message} · ${result.latencyMs}ms`);
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setTesting(false); }
@@ -71,13 +72,14 @@ export function SettingsDialog({ close, initialSection = 'profile' }: { close: (
           {section === 'profile' && <ProfileSettings usage={usage}/>} 
           {section === 'general' && <div className="settings-placeholder"><h2>常规</h2><p>此部分将在后续版本开放。</p></div>}
           {section === 'models' && <div className="model-settings">
-            <div className="settings-title"><div><h2>模型</h2><p>管理 OpenAI-compatible 模型。角色和对话只能选择这里已添加的模型。</p></div><button onClick={add}><Plus size={15}/>添加模型</button></div>
+            <div className="settings-title"><div><h2>模型</h2><p>管理 OpenAI-compatible 对话与 Embedding 模型。启用 Embedding 会把工作区文本片段发送给所配置的模型服务。</p></div><button onClick={add}><Plus size={15}/>添加模型</button></div>
             <div className="model-settings-body">
-              <aside>{models.map(item => { const stats = usage.byModel.find(stat => stat.model_id === item.id); return <button key={item.id} className={item.id === editingId ? 'active' : ''} onClick={() => setEditingId(item.id)}><span><strong>{item.name}</strong><small>{item.model}</small><small>{formatTokens(stats?.total_tokens || 0)} Token</small></span><i className={item.keyAvailable ? 'ready' : ''}/></button>; })}</aside>
+              <aside>{models.map(item => { const stats = usage.byModel.find(stat => stat.model_id === item.id); return <button key={item.id} className={item.id === editingId ? 'active' : ''} onClick={() => setEditingId(item.id)}><span><strong>{item.name}</strong><small>{item.purpose === 'embedding' ? 'Embedding' : '对话'} · {item.model}</small><small>{formatTokens(stats?.total_tokens || 0)} Token</small></span><i className={item.keyAvailable ? 'ready' : ''}/></button>; })}</aside>
               <div className="model-form">
                 <h3>{editingId ? '编辑模型' : '添加模型'}</h3>
                 {editingId && <div className="model-usage-summary"><span>累计 Token</span><strong>{formatTokens(usage.byModel.find(item => item.model_id === editingId)?.total_tokens || 0)}</strong><small>{usage.byModel.find(item => item.model_id === editingId)?.conversations || 0} 次任务</small></div>}
                 <label>显示名称<input value={name} onChange={event => setName(event.target.value)} placeholder="例如 DeepSeek"/></label>
+                <label>模型用途<select value={purpose} onChange={event => setPurpose(event.target.value as 'chat' | 'embedding')}><option value="chat">对话与 Agent</option><option value="embedding">知识库 Embedding</option></select></label>
                 <label>Base URL<input value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="https://api.xxx"/></label>
                 <label>Model<input value={model} onChange={event => setModel(event.target.value)} placeholder="模型标识"/></label>
                 <label>API Key <span>{editing?.keyAvailable ? editing.maskedKey : '未配置'}</span><div className="model-key"><KeyRound size={15}/><input type="password" autoComplete="off" value={apiKey} onChange={event => { setApiKey(event.target.value); setClearApiKey(false); }} placeholder={editing?.maskedKey || 'sk-…'}/></div></label>
@@ -98,7 +100,7 @@ function formatDuration(seconds: number) { if (seconds < 60) return `${seconds} 
 function ProfileSettings({ usage }: { usage: UsageSummary }) {
   const days = heatmapDays(usage.daily);
   const max = Math.max(1, ...days.map(day => day.tokens));
-  return <div className="profile-settings"><div className="profile-identity"><Avatar kind="yellow" size={76}/><h2>Yoko</h2><p>yoko@aivra.ai</p></div><div className="profile-metrics"><div><strong>{formatTokens(usage.totalTokens)}</strong><span>累计 Token</span></div><div><strong>{formatTokens(usage.peakTokens)}</strong><span>单任务峰值</span></div><div><strong>{formatDuration(usage.longestTaskSeconds)}</strong><span>最长任务时长</span></div></div><section className="token-activity"><header><div><h3>Token 活动</h3><p>过去 52 周每天的模型使用量</p></div><strong>{formatTokens(usage.totalTokens)} Token</strong></header><div className="token-heatmap" aria-label="Token 活动热力图">{days.map(day => { const level = day.tokens ? Math.max(1, Math.min(4, Math.ceil(day.tokens / max * 4))) : 0; return <i key={day.date} className={`level-${level} ${day.future ? 'future' : ''}`} title={day.future ? day.date : `${day.date} · ${formatTokens(day.tokens)} Token`}/>; })}</div><footer><span>少</span>{[0,1,2,3,4].map(level => <i key={level} className={`level-${level}`}/>)}<span>多</span></footer></section></div>;
+  return <div className="profile-settings"><div className="profile-identity"><h2>Yoko</h2><p>izcw@workbee.ai</p></div><div className="profile-metrics"><div><strong>{formatTokens(usage.totalTokens)}</strong><span>累计 Token</span></div><div><strong>{formatTokens(usage.peakTokens)}</strong><span>单任务峰值</span></div><div><strong>{formatDuration(usage.longestTaskSeconds)}</strong><span>最长任务时长</span></div></div><section className="token-activity"><header><div><h3>Token 活动</h3><p>过去 52 周每天的模型使用量</p></div><strong>{formatTokens(usage.totalTokens)} Token</strong></header><div className="token-heatmap" aria-label="Token 活动热力图">{days.map(day => { const level = day.tokens ? Math.max(1, Math.min(4, Math.ceil(day.tokens / max * 4))) : 0; return <i key={day.date} className={`level-${level} ${day.future ? 'future' : ''}`} title={day.future ? day.date : `${day.date} · ${formatTokens(day.tokens)} Token`}/>; })}</div><footer><span>少</span>{[0,1,2,3,4].map(level => <i key={level} className={`level-${level}`}/>)}<span>多</span></footer></section></div>;
 }
 
 function heatmapDays(daily: UsageSummary['daily']) {

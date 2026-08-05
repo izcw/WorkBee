@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Menu, net } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { randomUUID } = require('node:crypto');
@@ -8,7 +8,8 @@ const { AgentManager } = require('./agent-manager.cjs');
 const { SecureStore } = require('./secure-store.cjs');
 const { RoleStore } = require('./role-store.cjs');
 const { ModelStore } = require('./model-store.cjs');
-const { testOpenAIConnection } = require('./provider-test.cjs');
+const { McpStore } = require('./mcp-store.cjs');
+const { testOpenAIConnection, testEmbeddingConnection } = require('./provider-test.cjs');
 const execAsync = promisify(exec);
 
 const isDev = !app.isPackaged;
@@ -36,7 +37,7 @@ function requireString(value, name, max = 200_000) {
 const GITHUB_MCP_URL = 'https://api.githubcopilot.com/mcp/';
 
 async function verifyGithubMcp(token) {
-  const response = await fetch(GITHUB_MCP_URL, {
+  const response = await net.fetch(GITHUB_MCP_URL, {
     method: 'POST',
     headers: {
       Accept: 'application/json, text/event-stream',
@@ -44,7 +45,7 @@ async function verifyGithubMcp(token) {
       Authorization: `Bearer ${token}`,
       'MCP-Protocol-Version': '2025-03-26',
     },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'Aivra', version: '0.1.0' } } }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'WorkBee', version: '0.1.0' } } }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
@@ -56,13 +57,31 @@ async function verifyGithubMcp(token) {
   return { serverUrl: GITHUB_MCP_URL };
 }
 
+async function verifyMcpServer(url, token = '') {
+  const headers = {
+    Accept: 'application/json, text/event-stream',
+    'Content-Type': 'application/json',
+    'MCP-Protocol-Version': '2025-03-26',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await net.fetch(url, {
+    method: 'POST', headers,
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'WorkBee', version: '0.1.0' } } }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`MCP 连接失败（HTTP ${response.status}）`);
+  const payload = await response.text();
+  if (!payload.includes('"result"') && !payload.includes('serverInfo')) throw new Error('MCP 未返回有效的初始化响应');
+  return { connected: true };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 832,
     minWidth: 1024,
     minHeight: 680,
-    title: 'Aivra',
+    title: 'WorkBee',
     icon: appIcon,
     ...(isMac
       ? { transparent: true, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 17 } }
@@ -103,7 +122,14 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   const secureStore = new SecureStore(app);
   const modelStore = new ModelStore(app, secureStore);
   const roleStore = new RoleStore(app, modelStore);
-  agentManager = new AgentManager({ app, getProviderConfigs: () => roleStore.providersForAgent(), getGithubMcpToken: () => secureStore.getApiKey('github-mcp-token') });
+  const mcpStore = new McpStore(app, secureStore);
+  agentManager = new AgentManager({
+    app,
+    getProviderConfigs: () => roleStore.providersForAgent(),
+    getGithubMcpToken: () => secureStore.getApiKey('github-mcp-token'),
+    getEmbeddingProvider: () => modelStore.embeddingProvider(),
+    getMcpServers: () => mcpStore.forAgent(),
+  });
   agentManager.on('event', message => sendToRenderers('agent:event', message));
   agentManager.on('status', status => sendToRenderers('agent:status', status));
   agentManager.on('diagnostic', message => console.error(`[agent] ${message}`));
@@ -130,9 +156,24 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     await agentManager.restart();
     return { connected: false };
   });
+  ipcMain.handle('plugins:mcp-list', async () => mcpStore.list());
+  ipcMain.handle('plugins:mcp-save', async (_event, input) => {
+    const name = requireString(input?.name, 'name', 80);
+    const url = requireString(input?.url, 'url', 2048);
+    const token = typeof input?.token === 'string' ? input.token.trim() : '';
+    await verifyMcpServer(url, token);
+    const saved = await mcpStore.save({ id: input?.id, name, url, token, enabled: input?.enabled });
+    await agentManager.restart();
+    return saved;
+  });
+  ipcMain.handle('plugins:mcp-delete', async (_event, id) => {
+    const result = await mcpStore.delete(requireString(id, 'id', 64));
+    if (result.deleted) await agentManager.restart();
+    return result;
+  });
   ipcMain.handle('agent:select-workspace', async event => {
     const window = BrowserWindow.fromWebContents(event.sender);
-    const result = await dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'], title: '选择 Aivra 工作区' });
+    const result = await dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'], title: '选择 WorkBee 工作区' });
     if (result.canceled || !result.filePaths[0]) return null;
     const response = await agentManager.requestReady('workspace.select', { path: result.filePaths[0] });
     return response.payload.workspace;
@@ -153,11 +194,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       return { stdout: error.stdout || '', stderr: error.stderr || error.message, code: typeof error.code === 'number' ? error.code : 1 };
     }
   });
-  ipcMain.handle('agent:create-project', async () => {
+  ipcMain.handle('agent:create-project', async (_event, name) => {
     const id = randomUUID();
     const projectPath = path.join(app.getPath('userData'), 'projects', id);
     await fs.mkdir(projectPath, { recursive: true });
-    const response = await agentManager.requestReady('workspace.select', { path: projectPath, name: `新项目 ${new Date().toLocaleDateString('zh-CN')}` });
+    const projectName = typeof name === 'string' && name.trim() ? name.trim().slice(0, 80) : `新项目 ${new Date().toLocaleDateString('zh-CN')}`;
+    const response = await agentManager.requestReady('workspace.select', { path: projectPath, name: projectName });
     return response.payload.workspace;
   });
   ipcMain.handle('agent:list-workspaces', async () => {
@@ -215,6 +257,14 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const response = await agentManager.requestReady('run.create', payload);
     return response.payload;
   });
+  ipcMain.handle('agent:list-recoverable-runs', async () => {
+    const response = await agentManager.requestReady('run.recoverable', {});
+    return response.payload.runs;
+  });
+  ipcMain.handle('agent:resume-run', async (_event, runId) => {
+    const response = await agentManager.requestReady('run.resume', { runId: requireString(runId, 'runId', 128) });
+    return response.payload;
+  });
   ipcMain.handle('agent:cancel-run', async (_event, runId) => {
     const response = await agentManager.requestReady('run.cancel', { runId: requireString(runId, 'runId', 128) });
     return response.payload;
@@ -246,7 +296,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const model = requireString(input.model || saved?.model, 'model', 200);
     const apiKey = typeof input.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : saved?.apiKey;
     if (!apiKey) throw new Error('请先填写或保存 API Key');
-    return testOpenAIConnection({ baseUrl, model, apiKey });
+    return input.purpose === 'embedding' || saved?.purpose === 'embedding'
+      ? testEmbeddingConnection({ baseUrl, model, apiKey, fetchImpl: net.fetch })
+      : testOpenAIConnection({ baseUrl, model, apiKey, fetchImpl: net.fetch });
   });
   ipcMain.handle('models:delete', async (_event, modelId) => {
     const id = requireString(modelId, 'modelId', 128);
