@@ -42,6 +42,24 @@ class SecureStore {
     const encrypted = safeStorage.encryptString(JSON.stringify(keys)).toString('base64');
     await fs.writeFile(this.path, encrypted, { encoding: 'utf8', mode: 0o600 });
   }
+
+  // Remove keys that match the predicate (key id => boolean), keeping everything else.
+  async removeApiKeys(predicate) {
+    const keys = await this._readKeys();
+    let changed = false;
+    for (const roleId of Object.keys(keys)) {
+      if (predicate(roleId)) { delete keys[roleId]; changed = true; }
+    }
+    if (!changed) return;
+    if (Object.keys(keys).length === 0) {
+      await fs.rm(this.path, { force: true });
+      return;
+    }
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('系统安全存储暂不可用');
+    await fs.mkdir(path.dirname(this.path), { recursive: true });
+    const encrypted = safeStorage.encryptString(JSON.stringify(keys)).toString('base64');
+    await fs.writeFile(this.path, encrypted, { encoding: 'utf8', mode: 0o600 });
+  }
 }
 
 module.exports = { SecureStore };

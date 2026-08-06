@@ -19,14 +19,14 @@ def test_role_provider_configuration_is_loaded_from_process_environment(tmp_path
 def test_role_selector_accepts_json_fences_objects_and_text_names():
     providers = {
         "aivra": {"name": "BeeYo"},
-        "nova": {"name": "Nova"},
-        "mira": {"name": "Mira"},
-        "sage": {"name": "Sage"},
+        "nova": {"name": "Codeo"},
+        "mira": {"name": "Viso"},
+        "sage": {"name": "Lexo"},
     }
     role_ids = list(providers)
     assert select_role_from_output('```json\n{"roleId":"sage"}\n```', role_ids, providers) == "sage"
     assert select_role_from_output([{"type": "text", "text": '["mira"]'}], role_ids, providers) == "mira"
-    assert select_role_from_output("最适合的角色是 Nova。", role_ids, providers) == "nova"
+    assert select_role_from_output("最适合的角色是 Codeo。", role_ids, providers) == "nova"
     assert select_role_from_output("无法判断", role_ids, providers) is None
 
 
@@ -35,7 +35,7 @@ def test_role_selector_context_is_compact_and_keeps_latest_turn():
 
     providers = {
         "aivra": {"name": "BeeYo", "description": "general" * 100, "skills": ["general"] * 20},
-        "nova": {"name": "Nova", "description": "engineering" * 100, "skills": ["code"] * 20},
+        "nova": {"name": "Codeo", "description": "engineering" * 100, "skills": ["code"] * 20},
     }
     messages = [
         {"role": "user", "content": f"older-{index}" * 300, "role_id": None}

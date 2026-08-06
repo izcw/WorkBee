@@ -20,6 +20,7 @@ type RoleConfig = { id: string; name: string; role: string; avatar?: string; mod
 type ModelInput = { id?: string; name: string; baseUrl: string; model: string; purpose?: 'chat' | 'embedding'; apiKey?: string; clearApiKey?: boolean };
 type RecoverableRun = { id: string; thread_id: string; workspace_id: string; role_id: string; mode: 'chat' | 'task'; title: string; updated_at: string; safeToResume: boolean; phase: string };
 type McpServerConfig = { id: string; name: string; url: string; enabled: boolean; tokenAvailable: boolean };
+type AppSettings = { workspaceDir: string; defaultWorkspaceDir: string };
 
 interface Window {
   aivraDesktop?: {
@@ -61,6 +62,12 @@ interface Window {
       list(): Promise<RoleConfig[]>;
       save(input: { id?: string; name?: string; role?: string; avatar?: string; modelId: string; description?: string; skills?: string[]; knowledge?: string[] }): Promise<RoleConfig>;
       delete(roleId: string): Promise<{ deleted: boolean }>;
+    };
+    settings: {
+      get(): Promise<AppSettings>;
+      selectWorkspaceDir(): Promise<{ workspaceDir: string } | null>;
+      resetWorkspaceDir(): Promise<{ workspaceDir: string }>;
+      reset(): Promise<{ cleared: boolean }>;
     };
     plugins: {
       githubStatus(): Promise<{ connected: boolean; serverUrl: string }>;

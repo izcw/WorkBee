@@ -1,4 +1,4 @@
-import { Bot, KeyRound, LoaderCircle, Plus, Settings2, TestTube2, Trash2, UserRound } from 'lucide-react';
+import { Bot, FolderOpen, KeyRound, LoaderCircle, Plus, RotateCcw, Settings2, TestTube2, Trash2, TriangleAlert, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAgent } from '../agent/AgentContext';
 import { Avatar } from './ui';
@@ -65,14 +65,14 @@ export function SettingsDialog({ close, initialSection = 'profile' }: { close: (
       <div className="settings-layout">
         <nav>
           <button className={section === 'profile' ? 'active' : ''} onClick={() => setSection('profile')}><UserRound size={16}/>个人资料</button>
-          <button className={section === 'general' ? 'active' : ''} onClick={() => setSection('general')}><Settings2 size={16}/>常规</button>
+          <button className={section === 'general' ? 'active' : ''} onClick={() => setSection('general')}><Settings2 size={16}/>通用</button>
           <button className={section === 'models' ? 'active' : ''} onClick={() => setSection('models')}><Bot size={16}/>模型</button>
         </nav>
         <main>
           {section === 'profile' && <ProfileSettings usage={usage}/>} 
-          {section === 'general' && <div className="settings-placeholder"><h2>常规</h2><p>此部分将在后续版本开放。</p></div>}
+          {section === 'general' && <GeneralSettings/>}
           {section === 'models' && <div className="model-settings">
-            <div className="settings-title"><div><h2>模型</h2><p>管理 OpenAI-compatible 对话与 Embedding 模型。启用 Embedding 会把工作区文本片段发送给所配置的模型服务。</p></div><button onClick={add}><Plus size={15}/>添加模型</button></div>
+            <div className="settings-title"><div><h2>模型</h2><p>管理 OpenAI-compatible 对话与 Embedding 模型。启用 Embedding 会把工作区文本片段发送给所配置的模型服务。</p></div><button onClick={add}><Plus size={15}/>添加</button></div>
             <div className="model-settings-body">
               <aside>{models.map(item => { const stats = usage.byModel.find(stat => stat.model_id === item.id); return <button key={item.id} className={item.id === editingId ? 'active' : ''} onClick={() => setEditingId(item.id)}><span><strong>{item.name}</strong><small>{item.purpose === 'embedding' ? 'Embedding' : '对话'} · {item.model}</small><small>{formatTokens(stats?.total_tokens || 0)} Token</small></span><i className={item.keyAvailable ? 'ready' : ''}/></button>; })}</aside>
               <div className="model-form">
@@ -96,6 +96,65 @@ export function SettingsDialog({ close, initialSection = 'profile' }: { close: (
 
 function formatTokens(value: number) { return new Intl.NumberFormat('zh-CN').format(value); }
 function formatDuration(seconds: number) { if (seconds < 60) return `${seconds} 秒`; if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟`; return `${(seconds / 3600).toFixed(1)} 小时`; }
+
+const localDataKeys = ['aivra.workflows.v5', 'aivra.workflows.v4', 'aivra.workflows.v3', 'aivra.projectPreferences.v1', 'aivra.activeProject.v1', 'aivra.activeThread.v1', 'aivra.tasks.v1', 'aivra.tasks.archive.v1', 'aivra.markdown-documents.v1', 'aivra.expandedProjects.v1'];
+
+function GeneralSettings() {
+  const [workspaceDir, setWorkspaceDir] = useState('');
+  const [defaultWorkspaceDir, setDefaultWorkspaceDir] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    window.aivraDesktop?.settings.get()
+      .then(settings => { setWorkspaceDir(settings.workspaceDir); setDefaultWorkspaceDir(settings.defaultWorkspaceDir); })
+      .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)));
+  }, []);
+
+  const changeWorkspaceDir = async () => {
+    setBusy(true); setError('');
+    try {
+      const selected = await window.aivraDesktop?.settings.selectWorkspaceDir();
+      if (selected) setWorkspaceDir(selected.workspaceDir);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setBusy(false); }
+  };
+  const resetWorkspaceDir = async () => {
+    setBusy(true); setError('');
+    try {
+      const result = await window.aivraDesktop?.settings.resetWorkspaceDir();
+      if (result) setWorkspaceDir(result.workspaceDir);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setBusy(false); }
+  };
+  const resetAll = async () => {
+    if (!confirm('确定清除所有用户自定义数据并恢复默认吗？\n\n将清除：项目与对话记录、团队角色、模型配置与 API Key、插件连接与 MCP 配置、自定义文档、本地缓存。\n\n将保留：默认团队角色、内置知识库与内置技能。\n\n此操作无法恢复。')) return;
+    setBusy(true); setError('');
+    try {
+      await window.aivraDesktop?.settings.reset();
+      localDataKeys.forEach(key => localStorage.removeItem(key));
+      location.reload();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); setBusy(false); }
+  };
+
+  const currentDir = workspaceDir || defaultWorkspaceDir;
+  return <div className="general-settings">
+    <h2>通用</h2>
+    <div className="settings-card">
+      <header><div><h3>产物目录</h3><p>新建空间的默认存储位置，新创建的项目将存放在该目录下的独立文件夹中。</p></div></header>
+      <div className="path-row">
+        <span className="path-value" title={currentDir}>{currentDir}</span>
+        <button onClick={changeWorkspaceDir} disabled={busy}><FolderOpen size={14}/>更改</button>
+        <button onClick={resetWorkspaceDir} disabled={busy}><RotateCcw size={14}/>恢复默认</button>
+      </div>
+      {error && <p className="model-error">{error}</p>}
+    </div>
+    <div className="settings-card danger">
+      <header><div><h3>清除软件数据</h3><p>清除项目、对话、团队角色、模型、插件、文档等用户自定义内容，恢复初始默认状态。</p></div></header>
+      <button className="danger-button" disabled={busy} onClick={resetAll}><TriangleAlert size={14}/>清除用户数据并恢复默认</button>
+    </div>
+  </div>;
+}
 
 function ProfileSettings({ usage }: { usage: UsageSummary }) {
   const days = heatmapDays(usage.daily);

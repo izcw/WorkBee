@@ -52,6 +52,12 @@ contextBridge.exposeInMainWorld('aivraDesktop', {
     save: input => ipcRenderer.invoke('roles:save', input),
     delete: roleId => ipcRenderer.invoke('roles:delete', roleId),
   },
+  settings: {
+    get: () => ipcRenderer.invoke('settings:get'),
+    selectWorkspaceDir: () => ipcRenderer.invoke('settings:select-workspace-dir'),
+    resetWorkspaceDir: () => ipcRenderer.invoke('settings:reset-workspace-dir'),
+    reset: () => ipcRenderer.invoke('settings:reset'),
+  },
   plugins: {
     githubStatus: () => ipcRenderer.invoke('plugins:github-status'),
     openGithubTokenPage: () => ipcRenderer.invoke('plugins:github-open-token-page'),

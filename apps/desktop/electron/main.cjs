@@ -9,13 +9,35 @@ const { SecureStore } = require('./secure-store.cjs');
 const { RoleStore } = require('./role-store.cjs');
 const { ModelStore } = require('./model-store.cjs');
 const { McpStore } = require('./mcp-store.cjs');
+const { SettingsStore } = require('./settings-store.cjs');
 const { testOpenAIConnection, testEmbeddingConnection } = require('./provider-test.cjs');
 const execAsync = promisify(exec);
 
 const isDev = !app.isPackaged;
 const isMac = process.platform === 'darwin';
-const appIcon = path.join(__dirname, 'Aivra.png');
+const appIcon = path.join(__dirname, 'logo.png');
 let agentManager;
+
+// 统一应用数据目录名称：旧版本为 @aivra/desktop，现改为 @workbee/desktop。
+const USER_DATA_NAME = '@workbee/desktop';
+const LEGACY_USER_DATA_NAME = '@aivra/desktop';
+app.setName(USER_DATA_NAME);
+
+// 若旧版数据目录存在且新目录尚未创建，则将整个旧目录迁移到新位置，
+// 保留项目、对话、模型配置等全部数据；迁移失败不影响应用启动。
+async function migrateLegacyUserData() {
+  const legacyDir = path.join(app.getPath('appData'), LEGACY_USER_DATA_NAME);
+  try { await fs.access(legacyDir); } catch { return; }
+  const targetDir = path.join(app.getPath('appData'), USER_DATA_NAME);
+  try { await fs.access(targetDir); return; } catch {}
+  await fs.mkdir(path.dirname(targetDir), { recursive: true });
+  try {
+    await fs.rename(legacyDir, targetDir);
+    console.error(`[user-data] 已将数据目录从 ${legacyDir} 迁移到 ${targetDir}`);
+  } catch (error) {
+    console.error(`[user-data] 数据目录迁移失败：${error.message}`);
+  }
+}
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
@@ -114,7 +136,9 @@ function createWindow() {
   else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
 }
 
-if (hasSingleInstanceLock) app.whenReady().then(() => {
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
+  app.setPath('userData', path.join(app.getPath('appData'), USER_DATA_NAME));
+  await migrateLegacyUserData();
   if (!isMac) Menu.setApplicationMenu(null);
   // macOS ignores BrowserWindow.icon, so set the Dock icon explicitly as well.
   if (process.platform === 'darwin') app.dock.setIcon(appIcon);
@@ -123,6 +147,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   const modelStore = new ModelStore(app, secureStore);
   const roleStore = new RoleStore(app, modelStore);
   const mcpStore = new McpStore(app, secureStore);
+  const settingsStore = new SettingsStore(app);
   agentManager = new AgentManager({
     app,
     getProviderConfigs: () => roleStore.providersForAgent(),
@@ -178,6 +203,53 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const response = await agentManager.requestReady('workspace.select', { path: result.filePaths[0] });
     return response.payload.workspace;
   });
+  ipcMain.handle('settings:get', async () => {
+    const settings = await settingsStore.get();
+    return { workspaceDir: settings.workspaceDir, defaultWorkspaceDir: path.join(app.getPath('userData'), 'projects') };
+  });
+  ipcMain.handle('settings:select-workspace-dir', async event => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'], title: '选择新建空间的默认目录' });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const workspaceDir = result.filePaths[0];
+    await fs.mkdir(workspaceDir, { recursive: true });
+    const saved = await settingsStore.set({ workspaceDir });
+    return { workspaceDir: saved.workspaceDir };
+  });
+  ipcMain.handle('settings:reset-workspace-dir', async () => {
+    const saved = await settingsStore.set({ workspaceDir: '' });
+    return { workspaceDir: saved.workspaceDir };
+  });
+  ipcMain.handle('settings:reset', async () => {
+    let workspacePaths = [];
+    try {
+      const response = await agentManager.requestReady('workspace.list', {});
+      const workspaces = response?.payload?.workspaces;
+      if (Array.isArray(workspaces)) {
+        workspacePaths = workspaces.map(item => item?.path).filter(item => typeof item === 'string' && item.trim());
+      }
+    } catch {}
+    await agentManager.stop();
+    const userData = app.getPath('userData');
+    // Remove user-created data: projects, conversations, model/role/mcp configs and local settings.
+    // Default roles are rebuilt by the role store on next start; built-in knowledge and skills stay
+    // untouched. Models reset to an empty list (no default model) via modelStore.clear().
+    const targets = [
+      path.join(userData, 'roles.json'),
+      path.join(userData, 'mcp-servers.json'),
+      path.join(userData, 'settings.json'),
+      path.join(userData, 'aivra-agent.pid.json'),
+      path.join(userData, 'aivra.sqlite3'),
+    ];
+    if (workspacePaths.length) targets.push(...workspacePaths);
+    else targets.push(path.join(userData, 'projects'));
+    await Promise.all(targets.map(target => fs.rm(target, { recursive: true, force: true })));
+    await modelStore.clear();
+    // Drop all credentials for models, MCP servers and the GitHub connection.
+    await secureStore.removeApiKeys(key => key === 'github-mcp-token' || key.startsWith('mcp:') || key.startsWith('model:'));
+    try { await agentManager.start(); } catch {}
+    return { cleared: true };
+  });
   ipcMain.handle('agent:open-workspace', async (_event, workspacePath) => {
     if (typeof workspacePath !== 'string' || !workspacePath.trim()) return;
     const error = await shell.openPath(workspacePath);
@@ -196,7 +268,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle('agent:create-project', async (_event, name) => {
     const id = randomUUID();
-    const projectPath = path.join(app.getPath('userData'), 'projects', id);
+    const settings = await settingsStore.get();
+    const projectRoot = settings.workspaceDir || path.join(app.getPath('userData'), 'projects');
+    const projectPath = path.join(projectRoot, id);
     await fs.mkdir(projectPath, { recursive: true });
     const projectName = typeof name === 'string' && name.trim() ? name.trim().slice(0, 80) : `新项目 ${new Date().toLocaleDateString('zh-CN')}`;
     const response = await agentManager.requestReady('workspace.select', { path: projectPath, name: projectName });

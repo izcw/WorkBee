@@ -136,7 +136,7 @@ def test_multi_agent_tasks_are_persisted_with_thread_history(tmp_path: Path):
     workspace = database.select_workspace(workspace_path)
     thread_id = database.create_thread(workspace["id"], "协作分析")
     run_id = database.create_run(thread_id, "协作分析", "task")
-    task_id = database.create_agent_task(run_id, "nova", "Nova", "检查工程实现")
+    task_id = database.create_agent_task(run_id, "nova", "Codeo", "检查工程实现")
     database.update_agent_task(task_id, "completed", "结论与证据")
 
     task = database.get_thread(thread_id)["agent_tasks"][0]

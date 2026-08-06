@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Clock, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Clock, ExternalLink } from 'lucide-react';
 import type { PageId } from '../types';
 import { Composer } from '../components/Composer';
 import { ModalDialog } from '../components/ModalDialog';
 import { Avatar, Card, Dropdown } from '../components/ui';
 import role1 from '../assets/images/team-avatars/role1.png';
+import poster from '../assets/images/poster.jpg';
 import { useAgent } from '../agent/AgentContext';
 
 function dateValue(value?: string) {
@@ -17,6 +18,32 @@ function formatRecentDate(value?: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '最近';
   return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(date);
+}
+
+const WELCOME_PHRASES = ['召集智能体开工', '把工作交给智能体', '你的 AI 工作团队', '为你调度每个任务'];
+
+function TypewriterText() {
+  const [text, setText] = useState('');
+  useEffect(() => {
+    let phraseIndex = 0;
+    let charIndex = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const phrase = WELCOME_PHRASES[phraseIndex];
+      if (charIndex < phrase.length) {
+        charIndex += 1;
+        setText(phrase.slice(0, charIndex));
+        timer = setTimeout(tick, 120);
+      } else {
+        phraseIndex = (phraseIndex + 1) % WELCOME_PHRASES.length;
+        charIndex = 0;
+        timer = setTimeout(tick, 3000);
+      }
+    };
+    timer = setTimeout(tick, 120);
+    return () => clearTimeout(timer);
+  }, []);
+  return <>{text}<span className="typewriter-cursor" aria-hidden="true"/></>;
 }
 
 function NewWorkspaceDialog({ close, onCreated }: { close: () => void; onCreated: () => void }) {
@@ -51,9 +78,8 @@ function WorkspacePicker({ onNewWorkspace }: { onNewWorkspace: () => void }) {
 }
 
 export function HomePage({ onNavigate }: { onNavigate: (page: PageId) => void }) {
-  const { draft, setDraft, roles, models, selectedRoleId, selectedRoleIds, selectRole, createProject, approvalMode, setApprovalMode, projects, projectThreads, openProject, openThread, workspace, send } = useAgent();
+  const { draft, setDraft, roles, selectedRoleId, selectedRoleIds, selectRole, createProject, approvalMode, setApprovalMode, projects, projectThreads, openProject, openThread, workspace, send } = useAgent();
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
-  const needsModel = models.length === 0 || (models.length === 1 && models[0].id === 'deepseek-default' && !models[0].keyAvailable);
   const latestThreads = new Map<string, ThreadSummary>();
   projectThreads.forEach(thread => {
     const current = latestThreads.get(thread.workspace_id);
@@ -71,12 +97,15 @@ export function HomePage({ onNavigate }: { onNavigate: (page: PageId) => void })
     onNavigate('chat');
   };
   return <div className="home-page">
-    <section className="welcome"><div><h1>WorkBee，召集智能体开工</h1><p><strong>TaskBee</strong> 团队随时在线，WorkBee, Let Agents Work</p></div></section>
-    {needsModel && <section className="card" style={{ marginBottom: 18, padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}><span>请添加模型后开始使用 WorkBee。</span><button className="button" onClick={() => window.dispatchEvent(new Event('aivra:open-settings-models'))}><Plus size={14}/>添加模型</button></section>}
-    <Composer value={draft} onChange={setDraft} onSubmit={value => { const proceed = workspace ? send(value) : createProject(value); proceed.then(() => onNavigate('chat')).catch(() => onNavigate('chat')); }} roles={roles} selectedRoleId={selectedRoleId} selectedRoleIds={selectedRoleIds} onRoleChange={selectRole} approvalMode={approvalMode} onApprovalModeChange={setApprovalMode}/>
+    <section className="welcome"><div><h1>WorkBee，<TypewriterText /></h1><p><strong>TaskBee</strong> 团队随时在线，WorkBee, Let Agents Work</p></div></section>
+    <Composer value={draft} onChange={setDraft} onSubmit={value => { const proceed = workspace ? send(value) : createProject(value); proceed.then(() => onNavigate('chat')).catch(() => undefined); }} roles={roles} selectedRoleId={selectedRoleId} selectedRoleIds={selectedRoleIds} onRoleChange={selectRole} approvalMode={approvalMode} onApprovalModeChange={setApprovalMode}/>
     <WorkspacePicker onNewWorkspace={() => setNewWorkspaceOpen(true)}/>
     {newWorkspaceOpen && <NewWorkspaceDialog close={() => setNewWorkspaceOpen(false)} onCreated={() => onNavigate('chat')}/>}
     <section className="recent"><h2>最近项目</h2><div className="project-grid">
+      <a className="project-click poster-link" href="https://www.workbee.zhangchengwei.work/" target="_blank" rel="noreferrer" title="打开 WorkBee 官网"><Card className="project-card poster-card">
+        <img src={poster} alt="WorkBee 海报" draggable={false}/>
+        <span className="poster-link-icon" aria-hidden="true"><ExternalLink size={13}/></span>
+      </Card></a>
       {recentProjects.length === 0 && <p className="recent-empty">暂无最近项目</p>}
       {recentProjects.map(project => {
         const latestThread = latestThreads.get(project.id);

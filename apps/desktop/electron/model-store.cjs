@@ -44,7 +44,7 @@ class ModelStore {
   async _read() {
     try {
       const value = JSON.parse(await fs.readFile(this.path, 'utf8'));
-      if (Array.isArray(value) && value.length) return value;
+      if (Array.isArray(value)) return value;
     } catch {}
     return [{ ...DEFAULT_MODEL }];
   }
@@ -52,6 +52,12 @@ class ModelStore {
   async _write(models) {
     await fs.mkdir(path.dirname(this.path), { recursive: true });
     await fs.writeFile(this.path, JSON.stringify(models, null, 2), { encoding: 'utf8', mode: 0o600 });
+  }
+
+  // Reset to an empty model list (no default model). The file is written so it
+  // stays empty on the next start instead of falling back to the built-in default.
+  async clear() {
+    await this._write([]);
   }
 
   async _key(id) {

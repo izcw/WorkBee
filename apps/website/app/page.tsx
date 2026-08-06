@@ -7,10 +7,10 @@ const downloadUrl = "https://github.com/izcw/Aivra-Agent/releases";
 
 const agents = [
   { name: "BeeYo", role: "全能统筹 Agent", image: "/src/assets/images/team-avatars/role1.png?t=1785972364263", desc: "负责拆解目标、分派任务，并协调团队成员持续推进项目。", skills: ["任务拆解", "团队统筹"], knowledge: ["工作准则", "交付手册"] },
-  { name: "Nova", role: "软件工程 Agent", image: "/team/nova.png", desc: "将需求转化为可靠的实现方案，处理代码、验证与交付细节。", skills: ["软件开发", "问题排查"], knowledge: ["工程实践", "质量基线"] },
-  { name: "Mira", role: "产品设计 Agent", image: "/team/mira.png", desc: "梳理用户路径与产品结构，把想法打磨成可验证的体验方案。", skills: ["产品设计", "体验规划"], knowledge: ["设计规范", "产品指南"] },
-  { name: "Sage", role: "研究文档 Agent", image: "/team/sage.png", desc: "收集资料、核对信息并提炼重点，为团队提供可靠的研究支持。", skills: ["资料研究", "文档整理"], knowledge: ["研究方法", "证据手册"] },
-  { name: "Lyra", role: "运营内容 Agent", image: "/team/lyra.png", desc: "规划内容与推进节奏，把团队成果清晰地传递到合适的场景。", skills: ["内容策划", "运营推进"], knowledge: ["运营手册", "活动执行"] },
+  { name: "Codeo", role: "软件工程 Agent", image: "/team/codeo.png", desc: "将需求转化为可靠的实现方案，处理代码、验证与交付细节。", skills: ["软件开发", "问题排查"], knowledge: ["工程实践", "质量基线"] },
+  { name: "Viso", role: "产品设计 Agent", image: "/team/viso.png", desc: "梳理用户路径与产品结构，把想法打磨成可验证的体验方案。", skills: ["产品设计", "体验规划"], knowledge: ["设计规范", "产品指南"] },
+  { name: "Lexo", role: "研究文档 Agent", image: "/team/lexo.png", desc: "收集资料、核对信息并提炼重点，为团队提供可靠的研究支持。", skills: ["资料研究", "文档整理"], knowledge: ["研究方法", "证据手册"] },
+  { name: "Buzzo", role: "运营内容 Agent", image: "/team/buzzo.png", desc: "规划内容与推进节奏，把团队成果清晰地传递到合适的场景。", skills: ["内容策划", "运营推进"], knowledge: ["运营手册", "活动执行"] },
 ];
 
 function ProductShell({ compact = false }: { compact?: boolean }) {
@@ -90,28 +90,28 @@ export default function Home() {
       </article>
       <article className="feature-card dark-card">
         <div className="card-copy"><span>03 · 项目状态</span><h3>执行到哪一步，<br />在项目里一眼看清。</h3><p>查看正在进行的项目、负责角色和当前阶段。对话历史、任务结果与下一步行动都留在同一条工作脉络中。</p></div>
-        <div className="progress-board"><div className="progress-summary"><span>简历筛选</span><b>3 / 5 已完成</b></div><div className="progress-meter"><i /></div><div className="progress-timeline"><div className="done"><i>✓</i><span>需求确认<small>BeeYo</small></span></div><div className="done"><i>✓</i><span>简历分析<small>Ava</small></span></div><div className="current"><i>3</i><span>候选人评估<small>团队协作中</small></span></div><div><i>4</i><span>生成名单<small>待开始</small></span></div></div></div>
+        <div className="progress-board"><div className="progress-summary"><span>简历筛选</span><b>3 / 5 已完成</b></div><div className="progress-meter"><i /></div><div className="progress-timeline"><div className="done"><i>✓</i><span>需求确认<small>BeeYo</small></span></div><div className="done"><i>✓</i><span>简历分析<small>Lexo</small></span></div><div className="current"><i>3</i><span>候选人评估<small>团队协作中</small></span></div><div><i>4</i><span>生成名单<small>待开始</small></span></div></div></div>
       </article>
       <article className="feature-card workflow-card">
-        <div className="card-copy"><span>04 · 自定义工作步骤</span><h3>把一次对话，<br />组织成可编辑的流程。</h3><p>添加、删除、选择或拖动步骤，并为每一步分别绑定角色、技能与知识库。需求分析可以交给 BeeYo，资料研究由 Emma 读取项目知识库，后续步骤再调用不同成员继续执行。</p></div>
-        <div className="workflow-demo"><div className="workflow-title"><span>当前工作流</span><b>可拖动排序</b></div><div className="workflow-steps">{["需求","设计","实现","测试","行动"].map((step,i)=><div className={i===2?"active":""} key={step}><i>⠿</i><span>{step}</span><b>×</b></div>)}<button>＋ 添加步骤</button></div><div className="step-bindings"><span><b>BeeYo</b> 需求分析</span><span><b>Emma</b> 项目知识库</span><span><b>Ava</b> 信息聚合</span></div><p>每个步骤都可以拥有独立的角色、技能与知识来源</p></div>
+        <div className="card-copy"><span>04 · 自定义工作步骤</span><h3>把一次对话，<br />组织成可编辑的流程。</h3><p>添加、删除、选择或拖动步骤，并为每一步分别绑定角色、技能与知识库。需求分析可以交给 BeeYo，资料研究由 Lexo 读取项目知识库，后续步骤再调用不同成员继续执行。</p></div>
+        <div className="workflow-demo"><div className="workflow-title"><span>当前工作流</span><b>可拖动排序</b></div><div className="workflow-steps">{["需求","设计","实现","测试","行动"].map((step,i)=><div className={i===2?"active":""} key={step}><i>⠿</i><span>{step}</span><b>×</b></div>)}<button>＋ 添加步骤</button></div><div className="step-bindings"><span><b>BeeYo</b> 需求分析</span><span><b>Lexo</b> 项目知识库</span><span><b>Codeo</b> 代码实现</span></div><p>每个步骤都可以拥有独立的角色、技能与知识来源</p></div>
       </article>
       <article className="feature-card always-on-card">
         <div className="card-copy"><span>05 · 持续运行</span><h3>保持工作 24 小时<br />不间断运转。</h3><p>把重复工作设置为定时任务。日报整理、资料汇总和周期性检查会按计划启动，由指定角色在后台持续处理。</p></div>
-        <div className="schedule-demo"><div className="schedule-head"><span>自动运行计划</span><b>全部启用</b></div><div className="schedule-row"><i>07:30</i><div><strong>每日行业简报</strong><small>Emma · 每天</small></div><b>运行中</b></div><div className="schedule-row"><i>12:00</i><div><strong>候选人进度汇总</strong><small>Ava · 工作日</small></div><b>已计划</b></div><div className="schedule-row"><i>18:30</i><div><strong>项目状态检查</strong><small>BeeYo · 每天</small></div><b>已计划</b></div><div className="heartbeat"><i /><span>团队在线 · 下次任务将在 24 分钟后运行</span></div></div>
+        <div className="schedule-demo"><div className="schedule-head"><span>自动运行计划</span><b>全部启用</b></div><div className="schedule-row"><i>07:30</i><div><strong>每日行业简报</strong><small>Buzzo · 每天</small></div><b>运行中</b></div><div className="schedule-row"><i>12:00</i><div><strong>候选人进度汇总</strong><small>Lexo · 工作日</small></div><b>已计划</b></div><div className="schedule-row"><i>18:30</i><div><strong>项目状态检查</strong><small>BeeYo · 每天</small></div><b>已计划</b></div><div className="heartbeat"><i /><span>团队在线 · 下次任务将在 24 分钟后运行</span></div></div>
       </article>
       <article className="feature-card model-card" id="models">
         <div className="card-copy"><span>06 · 自定义模型接入</span><h3>模型由你选择，<br />WorkBee 负责组织协作。</h3><p>WorkBee 不内置大模型。通过自己的 API 配置连接外部模型服务，并根据对话、任务或工作步骤选择合适的模型。模型凭证与使用方式始终由你掌控。</p></div>
-        <div className="model-demo model-selector"><div className="model-settings-head"><span>设置 · 模型</span><button>＋ 添加模型</button></div><div className="model-config-list"><div><i>API</i><span><strong>主要模型</strong><small>OpenAI-compatible · 已配置</small></span><b>编辑</b></div><div><i>API</i><span><strong>快速模型</strong><small>OpenAI-compatible · 已配置</small></span><b>编辑</b></div></div><div className="model-role-route"><img src="/team/aivra-default.png" alt="" /><span>BeeYo</span><i>→</i><b>主要模型</b><small>角色可在团队设置中选择已添加的模型</small></div></div>
+        <div className="model-demo model-selector"><div className="model-settings-head"><span>设置 · 模型</span><button>添加模型</button></div><div className="model-config-list"><div><i>API</i><span><strong>主要模型</strong><small>OpenAI-compatible · 已配置</small></span><b>编辑</b></div><div><i>API</i><span><strong>快速模型</strong><small>OpenAI-compatible · 已配置</small></span><b>编辑</b></div></div><div className="model-role-route"><img src="/team/aivra-default.png" alt="" /><span>BeeYo</span><i>→</i><b>主要模型</b><small>角色可在团队设置中选择已添加的模型</small></div></div>
       </article>
     </section>
 
     <section className="agent-spotlight" aria-labelledby="agent-spotlight-title">
       <div className="spotlight-copy"><span>WorkBee Agent</span><h2 id="agent-spotlight-title">把目标交给团队，<br />让每一步都有专长。</h2><p>WorkBee 统筹你的工作目标，把研究、设计、实现与交付交给合适的角色。每个 Agent 都带着自己的技能、知识与工作上下文。</p><a href="#team">认识你的团队 <b>↓</b></a><div className="spotlight-index" aria-hidden="true"><i /><i className="active" /><i /><i /><i /></div></div>
       <div className="spotlight-stage" aria-label="Agent 协作示例">
-        <article className="spotlight-card research-card"><div className="spotlight-card-head"><img src="/team/sage.png" alt="" /><span>Sage · 资料研究</span><b>处理中</b></div><h3>用户研究摘要</h3><p>已整理 128 条反馈，并标记 3 个高优先级机会。</p><div className="research-lines"><i /><i /><i /><i /></div></article>
+        <article className="spotlight-card research-card"><div className="spotlight-card-head"><img src="/team/lexo.png" alt="" /><span>Lexo · 资料研究</span><b>处理中</b></div><h3>用户研究摘要</h3><p>已整理 128 条反馈，并标记 3 个高优先级机会。</p><div className="research-lines"><i /><i /><i /><i /></div></article>
         <article className="spotlight-card plan-card"><div className="spotlight-card-head"><img src="/team/aivra-default.png" alt="" /><span>BeeYo · 团队统筹</span><b>进行中</b></div><h3>发布计划</h3><div className="plan-list"><p><i>✓</i> 汇总目标与约束</p><p><i>✓</i> 分派研究与设计</p><p className="current"><i>3</i> 生成发布清单</p></div></article>
-        <article className="spotlight-card build-card"><div className="spotlight-card-head"><img src="/team/nova.png" alt="" /><span>Nova · 软件工程</span><b>待确认</b></div><h3>实现建议</h3><div className="code-lines"><i /><i /><i /><i /><i /></div><small>变更将在确认后执行</small></article>
+        <article className="spotlight-card build-card"><div className="spotlight-card-head"><img src="/team/codeo.png" alt="" /><span>Codeo · 软件工程</span><b>待确认</b></div><h3>实现建议</h3><div className="code-lines"><i /><i /><i /><i /><i /></div><small>变更将在确认后执行</small></article>
       </div>
     </section>
 

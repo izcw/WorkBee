@@ -11,25 +11,25 @@ const DEFAULT_ROLES = [
     knowledge: ['aivra-working-principles', 'planning-delivery-playbook'],
   },
   {
-    id: 'nova', name: 'Nova', role: '软件工程 Agent', modelId: 'deepseek-default', avatar: 'default:2',
+    id: 'nova', name: 'Codeo', role: '软件工程 Agent', modelId: 'deepseek-default', avatar: 'default:2',
     description: '负责理解代码库、设计技术方案、实现功能、修复缺陷并完成测试和构建验证，同时保护既有架构与用户改动。',
     skills: ['文件读写与整理', '软件开发与测试', '全局规划与执行'],
     knowledge: ['software-delivery-baseline', 'engineering-practice-guide'],
   },
   {
-    id: 'mira', name: 'Mira', role: '产品设计 Agent', modelId: 'deepseek-default', avatar: 'default:3',
+    id: 'mira', name: 'Viso', role: '产品设计 Agent', modelId: 'deepseek-default', avatar: 'default:3',
     description: '负责产品需求、用户流程、信息架构、交互状态、界面文案和设计评审，输出能够实现与验收的产品设计方案。',
     skills: ['产品与设计协作', '文档与办公处理', '全局规划与执行'],
     knowledge: ['product-design-guidelines', 'ux-design-system-guide'],
   },
   {
-    id: 'sage', name: 'Sage', role: '研究文档 Agent', modelId: 'deepseek-default', avatar: 'default:4',
+    id: 'sage', name: 'Lexo', role: '研究文档 Agent', modelId: 'deepseek-default', avatar: 'default:4',
     description: '负责读取和整理项目文件、资料研究、数据归纳、专业文档与报告撰写，核验证据边界并提炼可执行结论。',
     skills: ['文件读写与整理', '研究与数据分析', '文档与办公处理'],
     knowledge: ['research-evidence-playbook', 'document-quality-guide'],
   },
   {
-    id: 'lyra', name: 'Lyra', role: '运营内容 Agent', modelId: 'deepseek-default', avatar: 'default:5',
+    id: 'lyra', name: 'Buzzo', role: '运营内容 Agent', modelId: 'deepseek-default', avatar: 'default:5',
     description: '负责日常办公、内容策划、运营沟通与项目推进。能够把零散需求整理为计划、文案、清单和复盘，并结合用户、市场与项目资料给出清晰、可执行的建议。',
     skills: ['全局规划与执行', '文档与办公处理', '研究与数据分析', '产品与设计协作'],
     knowledge: ['operations-content-playbook', 'communication-campaign-guide'],
@@ -97,6 +97,7 @@ class RoleStore {
     const models = (await this.modelStore.list()).filter(model => model.purpose !== 'embedding');
     return roles.map(role => {
       const model = models.find(item => item.id === role.modelId) || models[0];
+      if (!model) return { ...role, modelId: '', modelName: '未配置', baseUrl: '', model: '', keyAvailable: false };
       return { ...role, modelId: model.id, modelName: model.name, baseUrl: model.baseUrl, model: model.model, keyAvailable: model.keyAvailable };
     });
   }

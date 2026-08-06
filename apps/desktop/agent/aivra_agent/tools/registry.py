@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import os
 import platform
 import shutil
@@ -240,6 +241,21 @@ class ToolRegistry:
         limit = int(arguments.get("limit", 6))
         return self._knowledge_search(query[:500], max(1, min(limit, 12)))
 
+    @staticmethod
+    @functools.lru_cache(maxsize=1)
+    def _sandbox_available() -> bool:
+        """Whether Seatbelt sandbox-exec can actually apply a profile on this machine."""
+        if platform.system() != "Darwin" or not Path("/usr/bin/sandbox-exec").exists():
+            return False
+        try:
+            probe = subprocess.run(
+                ["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"],
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            return probe.returncode == 0
+        except subprocess.TimeoutExpired:
+            return False
+
     def _run_command(self, arguments: Dict[str, Any]) -> str:
         command = str(arguments.get("command", "")).strip()
         args = arguments.get("arguments", [])
@@ -251,7 +267,7 @@ class ToolRegistry:
         executable = shutil.which(command)
         if not executable:
             raise ToolError(f"Executable not found: {command}")
-        if platform.system() != "Darwin" or not Path("/usr/bin/sandbox-exec").exists():
+        if not self._sandbox_available():
             raise ToolError("A supported OS command sandbox is not available; command execution was refused")
         profile = """
 (version 1)

@@ -330,6 +330,14 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   const provisionProject = async (name = '') => {
     if (!api) throw new Error('请在 WorkBee 桌面应用中创建项目');
+    const selectedRoles = roles.filter(role => selectedRoleIds.includes(role.id));
+    const missingRole = selectedRoles.find(role => !role.keyAvailable);
+    if (missingRole) {
+      window.dispatchEvent(new Event('aivra:open-settings-models'));
+      throw new Error(models.length === 0
+        ? '尚未配置模型，请先添加模型并配置 API Key'
+        : `角色 ${missingRole.name} 的模型 ${missingRole.modelName} 尚未配置 API Key，请添加模型并配置 API Key`);
+    }
     const project = await api.agent.createProject(name.trim() || undefined);
     setWorkspace(project); workspaceRef.current = project; setThreadId(undefined); setMessages([]); setActivity([]); setFileTree([]);
     const preferences = { roleIds: selectedRoleIds, approvalMode };
@@ -443,16 +451,21 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     } catch (reason) {
       return reject(reason instanceof Error ? reason.message : String(reason));
     }
+    const activeWorkflow = workflows.find(flow => flow.id === activeWorkflowId);
+    const workflowRoleIds = selectedRoleIds;
+    const selectedRoles = roles.filter(role => workflowRoleIds.includes(role.id));
+    const missingRole = selectedRoles.find(role => !role.keyAvailable);
+    if (missingRole) {
+      window.dispatchEvent(new Event('aivra:open-settings-models'));
+      return reject(models.length === 0
+        ? '尚未配置模型，请先添加模型并配置 API Key'
+        : `角色 ${missingRole.name} 的模型 ${missingRole.modelName} 尚未配置 API Key，请添加模型并配置 API Key`);
+    }
     let activeWorkspace = workspace;
     if (!activeWorkspace) {
       try { activeWorkspace = await provisionProject(); }
       catch (reason) { return reject(reason instanceof Error ? reason.message : String(reason)); }
     }
-    const activeWorkflow = workflows.find(flow => flow.id === activeWorkflowId);
-    const workflowRoleIds = selectedRoleIds;
-    const selectedRoles = roles.filter(role => workflowRoleIds.includes(role.id));
-    const missingRole = selectedRoles.find(role => !role.keyAvailable);
-    if (missingRole) return reject(`角色 ${missingRole.name} 的模型 ${missingRole.modelName} 尚未配置 API Key，请点击左下角头像 → 设置 → 模型`);
     const content = prompt.trim();
     if (!content || activeRun) return;
     setError(undefined); setStreaming(''); setActivity([]); setSelectingRole(workflowRoleIds.length > 1);

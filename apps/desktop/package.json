@@ -38,7 +38,7 @@
     "appId": "com.aivra.desktop",
     "productName": "WorkBee",
     "electronDist": "node_modules/electron/dist",
-    "icon": "electron/Aivra.png",
+    "icon": "electron/logo.png",
     "directories": {
       "output": "release"
     },
@@ -54,13 +54,13 @@
       }
     ],
     "mac": {
-      "icon": "electron/Aivra.png",
+      "icon": "electron/logo.png",
       "category": "public.app-category.productivity",
       "target": "dmg",
       "artifactName": "WorkBee-Agent-v${version}-macos-${arch}.${ext}"
     },
     "win": {
-      "icon": "electron/Aivra.png",
+      "icon": "electron/logo.png",
       "target": [
         "nsis",
         "zip"
@@ -71,7 +71,7 @@
       "artifactName": "WorkBee-Agent-Setup-v${version}-windows-${arch}.${ext}"
     },
     "linux": {
-      "icon": "electron/Aivra.png",
+      "icon": "electron/logo.png",
       "target": "AppImage"
     }
   },

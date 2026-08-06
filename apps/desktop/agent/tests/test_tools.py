@@ -1,10 +1,24 @@
 from pathlib import Path
 import platform
+import subprocess
 
 import pytest
 
 from aivra_agent.tools import ToolError, ToolRegistry
 from aivra_agent.tools.github_mcp import RemoteMcpClient
+
+
+def sandbox_available() -> bool:
+    if platform.system() != "Darwin" or not Path("/usr/bin/sandbox-exec").exists():
+        return False
+    try:
+        probe = subprocess.run(
+            ["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        return probe.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
 
 
 def test_read_file_stays_in_workspace(tmp_path: Path):
@@ -66,7 +80,7 @@ def test_generic_remote_mcp_tools_are_namespaced_and_risk_mapped(tmp_path: Path,
     assert registry.execute("mcp_notion_search", {"id": "123"}) == "search:123"
 
 
-@pytest.mark.skipif(platform.system() != "Darwin", reason="Seatbelt sandbox is macOS-specific")
+@pytest.mark.skipif(not sandbox_available(), reason="Seatbelt sandbox-exec is unavailable on this macOS")
 def test_command_sandbox_denies_files_outside_workspace(tmp_path: Path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
