@@ -47,6 +47,25 @@ def test_symlink_escape_is_rejected(tmp_path: Path):
         registry.execute("read_file", {"path": "escape.txt"})
 
 
+def test_read_pdf_extracts_text_and_rejects_escape(tmp_path: Path):
+    import fitz
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    pdf = workspace / "sample.pdf"
+    document = fitz.open()
+    document.new_page().insert_text((72, 72), "Hello PDF")
+    document.save(str(pdf))
+    document.close()
+    registry = ToolRegistry(workspace)
+    result = registry.execute("read_pdf", {"path": "sample.pdf"})
+    assert "Hello PDF" in result
+    with pytest.raises(ToolError):
+        registry.execute("read_pdf", {"path": "../outside.pdf"})
+    with pytest.raises(ToolError):
+        registry.execute("read_pdf", {"path": "missing.pdf"})
+
+
 def test_side_effect_tools_require_approval(tmp_path: Path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()

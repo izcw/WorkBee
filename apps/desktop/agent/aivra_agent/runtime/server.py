@@ -173,6 +173,7 @@ class AgentServer:
         self.github_mcp_token = os.environ.get("AIVRA_GITHUB_MCP_TOKEN", "")
         self.mcp_servers = self._load_mcp_servers()
         self.embedding_provider = EmbeddingProvider.from_environment(os.environ.get("AIVRA_EMBEDDING_PROVIDER", ""))
+        self.max_tool_steps = self._int_env("AIVRA_MAX_TOOL_STEPS", 12, 4, 100)
         self._write_lock = threading.Lock()
         self._shutdown = threading.Event()
         self._runs: Dict[str, threading.Event] = {}
@@ -180,6 +181,13 @@ class AgentServer:
         self._approvals: Dict[str, PendingApproval] = {}
         self._state_lock = threading.RLock()
         self._indexing_workspaces: set[str] = set()
+
+    @staticmethod
+    def _int_env(name: str, default: int, minimum: int, maximum: int) -> int:
+        try:
+            return max(minimum, min(int(os.environ.get(name, "") or default), maximum))
+        except (TypeError, ValueError):
+            return default
 
     @staticmethod
     def _load_mcp_servers() -> List[Dict[str, Any]]:
@@ -654,7 +662,7 @@ class AgentServer:
                 ),
                 cancel_event=cancel, max_tokens=4096,
             )
-            for _step in range(12):
+            for _step in range(self.max_tool_steps):
                 if cancel.is_set():
                     raise RunCancelled("Run was cancelled")
                 buffered_deltas.clear()
@@ -721,7 +729,7 @@ class AgentServer:
                         emit("tool.completed", {"toolCallId": call_id, "name": name, "approved": True, "error": result})
                     messages.append(ToolMessage(content=result, tool_call_id=call_id))
                 self.database.save_checkpoint(run_id, {"status": "running", "completedToolStep": _step + 1})
-            raise RuntimeError("Agent exceeded the 12-step tool limit")
+            raise RuntimeError(f"Agent exceeded the {self.max_tool_steps}-step tool limit")
         except RunCancelled:
             self.database.set_run_status(run_id, "cancelled")
             emit("run.cancelled", {"runId": run_id, "threadId": thread_id})

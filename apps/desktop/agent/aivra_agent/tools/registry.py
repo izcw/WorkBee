@@ -74,6 +74,9 @@ class ToolRegistry:
         self.register("read_file", "读取工作区内 UTF-8 文本文件。", {
             "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False
         }, "low", False, self._read_file)
+        self.register("read_pdf", "读取工作区内 PDF 文件的文本内容，按页返回，仅支持文本层（扫描件图片无文本层时返回空页）。", {
+            "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False
+        }, "low", False, self._read_pdf)
         self.register("git_status", "查看工作区 Git 状态，不会修改仓库。", {
             "type": "object", "properties": {}, "additionalProperties": False
         }, "low", False, self._git_status)
@@ -214,6 +217,30 @@ class ToolRegistry:
             return target.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             raise ToolError("Only UTF-8 text files are supported") from exc
+
+    def _read_pdf(self, arguments: Dict[str, Any]) -> str:
+        target = self._safe_existing_path(str(arguments.get("path", "")))
+        if not target.is_file():
+            raise ToolError("Path is not a file")
+        try:
+            import fitz  # PyMuPDF
+        except ImportError as exc:
+            raise ToolError("PDF reading requires the pymupdf dependency") from exc
+        try:
+            document = fitz.open(target)
+        except Exception as exc:
+            raise ToolError(f"Failed to open PDF: {exc}") from exc
+        limit = 512 * 1024
+        chunks: List[str] = []
+        try:
+            for page_number, page in enumerate(document, start=1):
+                chunks.append(f"--- Page {page_number} ---\n{(page.get_text('text') or '').strip()}")
+                if sum(len(chunk) for chunk in chunks) > limit:
+                    chunks.append("… PDF text exceeds the 512 KiB read limit; output truncated")
+                    break
+            return "\n".join(chunks).strip() or "(PDF contains no extractable text)"
+        finally:
+            document.close()
 
     def _write_file(self, arguments: Dict[str, Any]) -> str:
         content = str(arguments.get("content", ""))

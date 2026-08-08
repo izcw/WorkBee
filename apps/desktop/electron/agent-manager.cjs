@@ -83,6 +83,7 @@ class AgentManager extends EventEmitter {
       AIVRA_BASE_URL: 'https://api.deepseek.com', AIVRA_ROLE_PROVIDERS: JSON.stringify(providers),
       ...(githubMcpToken ? { AIVRA_GITHUB_MCP_TOKEN: githubMcpToken } : {}),
       ...(embeddingProvider?.apiKey ? { AIVRA_EMBEDDING_PROVIDER: JSON.stringify(embeddingProvider) } : {}),
+      ...(process.env.AIVRA_MAX_TOOL_STEPS ? { AIVRA_MAX_TOOL_STEPS: process.env.AIVRA_MAX_TOOL_STEPS } : {}),
       ...((mcpServers.length || process.env.AIVRA_MCP_SERVERS) ? {
         AIVRA_MCP_SERVERS: mcpServers.length ? JSON.stringify(mcpServers) : process.env.AIVRA_MCP_SERVERS,
       } : {}),

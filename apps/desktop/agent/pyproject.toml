@@ -11,7 +11,8 @@ dependencies = [
   "jsonschema>=4.23,<5",
   "langchain-core>=0.3,<2",
   "langchain-openai>=0.3,<2",
-  "langgraph>=0.4,<2"
+  "langgraph>=0.4,<2",
+  "pymupdf>=1.24,<2"
 ]
 
 [project.optional-dependencies]
