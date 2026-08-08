@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+function detectPlatform() {
+  if (typeof navigator === "undefined") return { name: "电脑", icon: "/icon/windows.png" };
+  const value = `${navigator.platform} ${navigator.userAgent}`.toLowerCase();
+  if (value.includes("mac")) return { name: "macOS", icon: "/icon/apple.png" };
+  if (value.includes("linux")) return { name: "Linux", icon: "/icon/linux.png" };
+  return { name: "Windows", icon: "/icon/windows.png" };
+}
 
 export function DownloadButton() {
-  const [platform, setPlatform] = useState({ name: "电脑", icon: "/icon/windows.png" });
-
-  useEffect(() => {
-    const value = `${navigator.platform} ${navigator.userAgent}`.toLowerCase();
-    if (value.includes("mac")) setPlatform({ name: "macOS", icon: "/icon/apple.png" });
-    else if (value.includes("linux")) setPlatform({ name: "Linux", icon: "/icon/linux.png" });
-    else setPlatform({ name: "Windows", icon: "/icon/windows.png" });
-  }, []);
+  const platform = detectPlatform();
 
   return <a className="button primary detected-download" href="#download">
     <img src={platform.icon} alt="" />

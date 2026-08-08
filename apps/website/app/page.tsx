@@ -12,41 +12,6 @@ const agents = [
   { name: "Buzzo", role: "运营内容 Agent", image: "/team/buzzo.png", desc: "规划内容与推进节奏，把团队成果清晰地传递到合适的场景。", skills: ["内容策划", "运营推进"], knowledge: ["运营手册", "活动执行"] },
 ];
 
-function ProductShell({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className={`app-shell${compact ? " compact" : ""}`}>
-      <div className="app-titlebar">
-        <div className="traffic"><i /><i /><i /></div>
-        <span>WorkBee</span>
-        <span className="command-key">⌘ K</span>
-      </div>
-      <div className="app-body">
-        <aside className="app-sidebar">
-          <strong>WorkBee</strong>
-          <nav><span className="selected">⌂ <b>主页</b></span><span>◌ <b>对话</b></span><span>□ <b>项目</b></span><span>◇ <b>团队</b></span></nav>
-          <small>最近项目</small>
-          <span className="project-link"><i /> 产品发布</span>
-          <span className="project-link"><i /> 用户研究</span>
-        </aside>
-        <div className="app-content">
-          <div className="welcome-row">
-            <div className="mini-avatar"><img src="/team-avatars/role1.png" alt="" /></div>
-            <div><small>下午好</small><h3>今天想完成什么？</h3></div>
-          </div>
-          <div className="composer">
-            <p>告诉 WorkBee 你的目标，剩下的交给团队…</p>
-            <div><span>＋ 添加文件</span><button aria-label="发送">↑</button></div>
-          </div>
-          <div className="project-row">
-            <article><small>进行中</small><strong>产品发布</strong><p>整理发布清单与宣传内容</p><div className="avatar-stack">{agents.map(a => <img key={a.name} src={a.image} alt="" />)}</div></article>
-            <article><small>本周</small><strong>用户研究</strong><p>分析 128 条用户反馈</p><div className="progress-line"><i /></div></article>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Home() {
   return <main>
     <header className="site-header">
