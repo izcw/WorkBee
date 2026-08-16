@@ -77,22 +77,22 @@ type AgentContextValue = {
 
 const defaultModel: ModelConfig = { id: 'deepseek-default', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', purpose: 'chat', keyAvailable: false, maskedKey: '' };
 const defaultRole: RoleConfig = {
-  id: 'aivra', name: 'BeeYo', role: '全能统筹 Agent', modelId: defaultModel.id, modelName: defaultModel.name,
+  id: 'workbee', name: 'BeeYo', role: '全能统筹 Agent', modelId: defaultModel.id, modelName: defaultModel.name,
   baseUrl: defaultModel.baseUrl, model: defaultModel.model, keyAvailable: false,
   description: '全盘统筹并完成文件处理、软件开发、产品设计、办公文档、研究分析和结果验证。',
   skills: ['全局规划与执行', '文件读写与整理', '软件开发与测试', '产品与设计协作', '文档与办公处理', '研究与数据分析'],
-  knowledge: ['aivra-working-principles', 'planning-delivery-playbook'],
+  knowledge: ['workbee-working-principles', 'planning-delivery-playbook'],
 };
 
 const AgentContext = createContext<AgentContextValue | null>(null);
 const emptyUsage: UsageSummary = { totalTokens: 0, peakTokens: 0, longestTaskSeconds: 0, byModel: [], daily: [] };
-const defaultRoleIds = ['aivra', 'nova', 'mira', 'sage', 'lyra'];
-const projectPreferencesKey = 'aivra.projectPreferences.v1';
+const defaultRoleIds = ['workbee', 'nova', 'mira', 'sage', 'lyra'];
+const projectPreferencesKey = 'workbee.projectPreferences.v1';
 const initialWorkflows: WorkflowStep[] = [
-  { id: 'flow-work-assistant', name: 'AI 工作助手', description: '处理日常工作中的资料整理、文档撰写、分析总结、计划制定、协作沟通和任务推进。', roleIds: ['aivra', 'sage', 'mira'], documents: [] },
-  { id: 'flow-create', name: '创建', description: '把一个想法变成可交付的内容或产品：明确目标、制定方案、完成制作并检查结果。', roleIds: ['aivra', 'mira', 'nova'], documents: [] },
-  { id: 'flow-learn-explore', name: '学习和探索', description: '围绕新主题收集信息、解释概念、比较方案，并把探索结果整理成清晰结论。', roleIds: ['aivra', 'sage', 'mira'], documents: [] },
-  { id: 'flow-build-debug-ship', name: '构建、调试并发布', description: '理解代码库，规划并实现改动，定位问题、运行验证，最后整理为可发布的交付结果。', roleIds: ['aivra', 'nova', 'mira'], documents: [] },
+  { id: 'flow-work-assistant', name: 'AI 工作助手', description: '处理日常工作中的资料整理、文档撰写、分析总结、计划制定、协作沟通和任务推进。', roleIds: ['workbee', 'sage', 'mira'], documents: [] },
+  { id: 'flow-create', name: '创建', description: '把一个想法变成可交付的内容或产品：明确目标、制定方案、完成制作并检查结果。', roleIds: ['workbee', 'mira', 'nova'], documents: [] },
+  { id: 'flow-learn-explore', name: '学习和探索', description: '围绕新主题收集信息、解释概念、比较方案，并把探索结果整理成清晰结论。', roleIds: ['workbee', 'sage', 'mira'], documents: [] },
+  { id: 'flow-build-debug-ship', name: '构建、调试并发布', description: '理解代码库，规划并实现改动，定位问题、运行验证，最后整理为可发布的交付结果。', roleIds: ['workbee', 'nova', 'mira'], documents: [] },
 ];
 const previousBuiltInWorkflowIds = new Set([...initialWorkflows.map(flow => flow.id), 'flow-ide', 'flow-coding-assistant']);
 
@@ -130,23 +130,23 @@ function loadProjectPreferences(): Record<string, ProjectPreferences> {
 }
 
 export function AgentProvider({ children }: { children: React.ReactNode }) {
-  const api = window.aivraDesktop;
+  const api = window.workbeeDesktop;
   const [runtime, setRuntime] = useState<RuntimeState>({ status: api ? 'starting' : 'browser', ready: false });
   const [keyAvailable, setKeyAvailable] = useState(false);
   const [models, setModels] = useState<ModelConfig[]>([defaultModel]);
   const [usage, setUsage] = useState<UsageSummary>(emptyUsage);
   const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
   const [roles, setRoles] = useState<RoleConfig[]>([defaultRole]);
-  const [selectedRoleId, setSelectedRoleId] = useState('aivra');
+  const [selectedRoleId, setSelectedRoleId] = useState('workbee');
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>(defaultRoleIds);
-  const [selectedTeamRoleId, setSelectedTeamRoleId] = useState('aivra');
+  const [selectedTeamRoleId, setSelectedTeamRoleId] = useState('workbee');
   const [workflows, setWorkflows] = useState<WorkflowStep[]>(() => {
     try {
-      const saved = localStorage.getItem('aivra.workflows.v5');
+      const saved = localStorage.getItem('workbee.workflows.v5');
       const parsed = normalizeWorkflows(saved ? JSON.parse(saved) : null);
       if (parsed.length) return parsed;
 
-      const previousSaved = localStorage.getItem('aivra.workflows.v4') || localStorage.getItem('aivra.workflows.v3');
+      const previousSaved = localStorage.getItem('workbee.workflows.v4') || localStorage.getItem('workbee.workflows.v3');
       const custom = normalizeWorkflows(previousSaved ? JSON.parse(previousSaved) : null)
         .filter(flow => !isUntouchedLegacyDefault(flow) && !previousBuiltInWorkflowIds.has(flow.id));
       return [...initialWorkflows, ...custom];
@@ -163,7 +163,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [threadId, setThreadId] = useState<string>();
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [streaming, setStreaming] = useState('');
-  const [respondingRoleId, setRespondingRoleId] = useState('aivra');
+  const [respondingRoleId, setRespondingRoleId] = useState('workbee');
   const [selectingRole, setSelectingRole] = useState(false);
   const [activeRun, setActiveRun] = useState<string>();
   const [recoverableRuns, setRecoverableRuns] = useState<RecoverableRun[]>([]);
@@ -180,13 +180,13 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   projectsRef.current = projects;
   projectPreferencesRef.current = projectPreferences;
 
-  useEffect(() => { localStorage.setItem('aivra.workflows.v5', JSON.stringify(workflows)); }, [workflows]);
+  useEffect(() => { localStorage.setItem('workbee.workflows.v5', JSON.stringify(workflows)); }, [workflows]);
   useEffect(() => { localStorage.setItem(projectPreferencesKey, JSON.stringify(projectPreferences)); }, [projectPreferences]);
 
   const applyProjectPreferences = (projectId: string, availableRoles = roles) => {
     const saved = projectPreferencesRef.current[projectId];
     const roleIds = (saved?.roleIds || defaultRoleIds).filter(id => availableRoles.some(role => role.id === id));
-    const nextRoleIds = roleIds.length ? roleIds : [availableRoles[0]?.id || 'aivra'];
+    const nextRoleIds = roleIds.length ? roleIds : [availableRoles[0]?.id || 'workbee'];
     setSelectedRoleIds(nextRoleIds); setSelectedRoleId(nextRoleIds[0]);
     setKeyAvailable(Boolean(availableRoles.find(role => role.id === nextRoleIds[0])?.keyAvailable));
     setApprovalModeState(saved?.approvalMode || 'request');
@@ -226,20 +226,20 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       setRoles(configuredRoles);
       setModels(configuredModels);
       setUsage(currentUsage);
-      setKeyAvailable(Boolean(configuredRoles.find(role => role.id === 'aivra')?.keyAvailable));
+      setKeyAvailable(Boolean(configuredRoles.find(role => role.id === 'workbee')?.keyAvailable));
       setProjects(savedProjects); setProjectThreads(savedThreads);
       setRecoverableRuns(interruptedRuns);
-      const savedProjectId = localStorage.getItem('aivra.activeProject.v1');
+      const savedProjectId = localStorage.getItem('workbee.activeProject.v1');
       const restoredProject = savedProjects.find(project => project.id === savedProjectId) || savedProjects[0];
       if (restoredProject) {
         setWorkspace(restoredProject); workspaceRef.current = restoredProject;
         applyProjectPreferences(restoredProject.id, configuredRoles);
         setThreads(savedThreads.filter(thread => thread.workspace_id === restoredProject.id));
-        localStorage.setItem('aivra.activeProject.v1', restoredProject.id);
+        localStorage.setItem('workbee.activeProject.v1', restoredProject.id);
         api.agent.workspaceTree(restoredProject.id).then(setFileTree).catch(() => setFileTree([]));
-        const savedThreadId = localStorage.getItem('aivra.activeThread.v1');
+        const savedThreadId = localStorage.getItem('workbee.activeThread.v1');
         const restoredThread = savedThreads.find(thread => thread.id === savedThreadId && thread.workspace_id === restoredProject.id);
-        if (restoredThread) await loadThread(restoredThread.id).catch(() => localStorage.removeItem('aivra.activeThread.v1'));
+        if (restoredThread) await loadThread(restoredThread.id).catch(() => localStorage.removeItem('workbee.activeThread.v1'));
       }
     }).catch(reason => setError(String(reason)));
     const removeStatus = api.agent.onStatus(status => {
@@ -321,7 +321,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     const selected = await api.agent.selectWorkspace();
     if (!selected) return;
     setWorkspace(selected); workspaceRef.current = selected; applyProjectPreferences(selected.id); setThreadId(undefined); setMessages([]); setActivity([]);
-    localStorage.setItem('aivra.activeProject.v1', selected.id); localStorage.removeItem('aivra.activeThread.v1');
+    localStorage.setItem('workbee.activeProject.v1', selected.id); localStorage.removeItem('workbee.activeThread.v1');
     const [currentThreads, allThreads, savedProjects, tree] = await Promise.all([
       api.agent.listThreads(selected.id), api.agent.listThreads(), api.agent.listWorkspaces(), api.agent.workspaceTree(selected.id),
     ]);
@@ -333,7 +333,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     const selectedRoles = roles.filter(role => selectedRoleIds.includes(role.id));
     const missingRole = selectedRoles.find(role => !role.keyAvailable);
     if (missingRole) {
-      window.dispatchEvent(new Event('aivra:open-settings-models'));
+      window.dispatchEvent(new Event('workbee:open-settings-models'));
       throw new Error(models.length === 0
         ? '尚未配置模型，请先添加模型并配置 API Key'
         : `角色 ${missingRole.name} 的模型 ${missingRole.modelName} 尚未配置 API Key，请添加模型并配置 API Key`);
@@ -342,7 +342,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     setWorkspace(project); workspaceRef.current = project; setThreadId(undefined); setMessages([]); setActivity([]); setFileTree([]);
     const preferences = { roleIds: selectedRoleIds, approvalMode };
     saveProjectPreferences(project.id, preferences); projectPreferencesRef.current = { ...projectPreferencesRef.current, [project.id]: preferences };
-    localStorage.setItem('aivra.activeProject.v1', project.id); localStorage.removeItem('aivra.activeThread.v1');
+    localStorage.setItem('workbee.activeProject.v1', project.id); localStorage.removeItem('workbee.activeThread.v1');
     const [currentThreads, allThreads, savedProjects] = await Promise.all([
       api.agent.listThreads(project.id), api.agent.listThreads(), api.agent.listWorkspaces(),
     ]);
@@ -365,25 +365,25 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     const project = projectsRef.current.find(item => item.id === id);
     if (!project) return;
     setWorkspace(project); workspaceRef.current = project; applyProjectPreferences(project.id); setThreadId(undefined); setMessages([]); setStreaming(''); setError(undefined); setActivity([]);
-    localStorage.setItem('aivra.activeProject.v1', id); localStorage.removeItem('aivra.activeThread.v1');
+    localStorage.setItem('workbee.activeProject.v1', id); localStorage.removeItem('workbee.activeThread.v1');
     const [currentThreads, tree] = await Promise.all([api.agent.listThreads(id), api.agent.workspaceTree(id)]);
     setThreads(currentThreads); setFileTree(tree);
   };
   const openThread = async (id: string) => {
     setStreaming(''); setSelectingRole(false); setError(undefined); await loadThread(id);
-    localStorage.setItem('aivra.activeThread.v1', id);
+    localStorage.setItem('workbee.activeThread.v1', id);
   };
   const newProjectThread = async (projectId: string) => {
     if (!api) return;
     await openProject(projectId);
     const created = await api.agent.createThread(projectId);
     setThreadId(created.threadId); setMessages([]); setDraft(''); setPendingPrompt('');
-    localStorage.setItem('aivra.activeThread.v1', created.threadId);
+    localStorage.setItem('workbee.activeThread.v1', created.threadId);
     await refreshThreads();
   };
   const newThread = () => {
     setThreadId(undefined); setMessages([]); setStreaming(''); setSelectingRole(false); setError(undefined); setApprovals([]); setActivity([]); setDraft(''); setPendingPrompt('');
-    localStorage.removeItem('aivra.activeThread.v1');
+    localStorage.removeItem('workbee.activeThread.v1');
   };
   const deleteThread = async (id: string) => {
     if (!api) return;
@@ -408,13 +408,13 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     const nextProject = savedProjects[0];
     if (!nextProject) {
       setWorkspace(null); workspaceRef.current = null; setThreads([]); setFileTree([]);
-      localStorage.removeItem('aivra.activeProject.v1');
+      localStorage.removeItem('workbee.activeProject.v1');
       return;
     }
     setWorkspace(nextProject); workspaceRef.current = nextProject;
     applyProjectPreferences(nextProject.id);
     setThreads(allThreads.filter(item => item.workspace_id === nextProject.id));
-    localStorage.setItem('aivra.activeProject.v1', nextProject.id);
+    localStorage.setItem('workbee.activeProject.v1', nextProject.id);
     setFileTree(await api.agent.workspaceTree(nextProject.id).catch(() => []));
   };
   const renameProject = async (id: string, name: string) => {
@@ -435,8 +435,8 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     newThread();
     // A new project starts from its own defaults and is not a continuation of the active project.
     setWorkspace(null); workspaceRef.current = null; setFileTree([]);
-    setSelectedRoleId('aivra'); setSelectedRoleIds(defaultRoleIds);
-    setKeyAvailable(Boolean(roles.find(role => role.id === 'aivra')?.keyAvailable));
+    setSelectedRoleId('workbee'); setSelectedRoleIds(defaultRoleIds);
+    setKeyAvailable(Boolean(roles.find(role => role.id === 'workbee')?.keyAvailable));
     setApprovalModeState('request');
     setDraft(prompt); setPendingPrompt(prompt.trim());
   };
@@ -456,7 +456,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     const selectedRoles = roles.filter(role => workflowRoleIds.includes(role.id));
     const missingRole = selectedRoles.find(role => !role.keyAvailable);
     if (missingRole) {
-      window.dispatchEvent(new Event('aivra:open-settings-models'));
+      window.dispatchEvent(new Event('workbee:open-settings-models'));
       return reject(models.length === 0
         ? '尚未配置模型，请先添加模型并配置 API Key'
         : `角色 ${missingRole.name} 的模型 ${missingRole.modelName} 尚未配置 API Key，请添加模型并配置 API Key`);
@@ -473,7 +473,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     try {
       const created = await api.agent.createRun({ workspaceId: activeWorkspace.id, threadId, prompt: content, mode, roleIds: workflowRoleIds, approvalMode, workflowName: activeWorkflow?.name, documents: activeWorkflow?.documents || [] });
       setThreadId(created.threadId); setActiveRun(created.runId);
-      localStorage.setItem('aivra.activeProject.v1', activeWorkspace.id); localStorage.setItem('aivra.activeThread.v1', created.threadId);
+      localStorage.setItem('workbee.activeProject.v1', activeWorkspace.id); localStorage.setItem('workbee.activeThread.v1', created.threadId);
       await refreshThreads();
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
@@ -489,7 +489,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       const resumed = await api.agent.resumeRun(runId);
       setThreadId(resumed.threadId); setActiveRun(resumed.runId);
       setRecoverableRuns(items => items.filter(item => item.id !== runId));
-      localStorage.setItem('aivra.activeThread.v1', resumed.threadId);
+      localStorage.setItem('workbee.activeThread.v1', resumed.threadId);
       await loadThread(resumed.threadId);
     } catch (reason) {
       setSelectingRole(false);
@@ -553,16 +553,16 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     setRoles(items => items.filter(item => item.id !== id));
     setSelectedRoleIds(items => {
       const next = items.filter(item => item !== id);
-      return next.length ? next : ['aivra'];
+      return next.length ? next : ['workbee'];
     });
     if (selectedRoleId === id) {
-      setSelectedRoleId('aivra');
-      setKeyAvailable(Boolean(roles.find(role => role.id === 'aivra')?.keyAvailable));
+      setSelectedRoleId('workbee');
+      setKeyAvailable(Boolean(roles.find(role => role.id === 'workbee')?.keyAvailable));
     }
-    if (selectedTeamRoleId === id) setSelectedTeamRoleId('aivra');
+    if (selectedTeamRoleId === id) setSelectedTeamRoleId('workbee');
     setWorkflows(items => items.map(flow => {
       const roleIds = flow.roleIds.filter(roleId => roleId !== id);
-      return { ...flow, roleIds: roleIds.length ? roleIds : ['aivra'] };
+      return { ...flow, roleIds: roleIds.length ? roleIds : ['workbee'] };
     }));
   };
   const setActiveWorkflow = (id: string) => {
@@ -580,7 +580,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   };
   const addWorkflow = () => {
     const flow = { id: `flow-${Date.now()}`, name: `流程 ${workflows.length + 1}`, description: '描述这个流程的目标和交付结果。', roleIds: defaultRoleIds, documents: [] };
-    setWorkflows(items => [...items, flow]); setActiveWorkflowId(flow.id); setSelectedRoleIds(flow.roleIds); setSelectedRoleId('aivra');
+    setWorkflows(items => [...items, flow]); setActiveWorkflowId(flow.id); setSelectedRoleIds(flow.roleIds); setSelectedRoleId('workbee');
   };
   const removeWorkflow = (id: string) => setWorkflows(items => {
     if (items.length === 1) return items;

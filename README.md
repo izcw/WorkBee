@@ -1,91 +1,114 @@
 # WorkBee
 
-> 本地优先的桌面 AI Agent 工作空间
+> 本地优先的桌面 AI Agent 工作空间。
 
-WorkBee 在本机运行 Python Agent，通过 Electron 桌面界面协助你完成开发、设计、研究、办公和内容工作。你选择工作区与模型服务；Agent 仅在授权范围内读取或修改文件，高风险操作会先请求审批。
+WorkBee 将 Electron 桌面端与本机 Python Agent 组合在一起，用于在用户授权的工作区中完成开发、研究、设计、办公与内容任务。用户自行配置模型服务和本地目录；Agent 的文件、Git 与命令操作均受工作区边界和审批机制约束。
 
-## 功能概览
+## 适用场景
 
-- **本地工作空间**：选择本地目录后，在对话或任务模式中处理项目；支持停止任务与查看历史记录。
-- **可配置模型**：在“设置 → 模型”中添加、编辑、删除并测试 OpenAI-compatible 模型连接。模型密钥仅在本机加密保存，界面只显示掩码。
-- **多智能体协作**：任务模式由协调角色选择最多三个专家并行分析；专家只使用本地只读工具，独立质检 Agent 会检查最终草稿，最终由协调角色修订、汇总并发起受审批保护的写入操作。
-- **混合检索增强**：授权工作区中的文本与源码按内容哈希增量索引；配置 Embedding 模型后融合向量召回与 SQLite FTS5 排名，未配置或服务失败时自动退回本地检索。结果包含文件路径与行号。
-- **MCP 工具注册表**：内置 GitHub MCP，并可在插件页添加其他 Streamable HTTP MCP；普通配置保存在本机，Bearer Token 进入系统安全存储。工具按 MCP 命名空间隔离，并依据 annotations 映射风险。
-- **上下文选择**：输入 `@` 可选择插件、技能或内置知识文档，将需要的上下文加入当前任务。
-- **工具审批**：支持受限的目录浏览、UTF-8 文件读取和 Git 状态查看；写文件与命令执行等高风险工具必须经过界面审批。
-- **本地状态与安全边界**：工作区引用、线程、消息、运行记录、审批和 checkpoint 存在 SQLite 中；Python Agent 是唯一写入者。崩溃后只自动重放尚未产生副作用的任务，其他任务强制人工检查。
+- 在一个本地项目中分析代码、整理资料、生成文档或执行多步骤任务。
+- 为不同角色配置 OpenAI-compatible 模型，并按任务选择协作角色。
+- 让 Agent 检索已授权工作区中的文本和源码，再基于结果继续工作。
+- 连接 GitHub 或兼容 Streamable HTTP 的 MCP 服务，并在执行高风险操作前保留用户确认。
 
-模型请求会将完成当前任务所需的上下文发送给所选角色配置的模型服务商。请勿在任务中提供不必要的敏感信息。
+## 产品特点
 
-## 安全说明
+| 特点 | 说明 |
+|---|---|
+| 本地优先 | 从选择工作区到任务记录，核心流程围绕本机文件与数据展开。 |
+| 任务可控 | 对话、任务、角色选择与审批模式彼此配合，让自动化保持在用户可见、可干预的范围内。 |
+| 多角色协作 | 统筹角色可结合不同专长完成分析、执行与结果检查，适应复杂的多步骤工作。 |
+| 贴近上下文 | 将工作区中的资料、源码与用户主动加入的知识内容作为任务上下文，减少重复说明。 |
+| 开放扩展 | 支持 OpenAI-compatible 模型与 MCP 服务，可按个人工作流连接模型、工具和知识来源。 |
+| 安全分层 | 凭证、文件、命令与外部调用分层管理；高风险操作由用户在执行前确认。 |
 
-- API Key 由 Electron `safeStorage` 加密保存在应用用户数据目录，不写入源码、项目目录、SQLite、协议消息或日志。
-- 命令不经过 Shell 解析。macOS 使用 Seatbelt 沙箱禁止网络及工作区外的文件访问；在 Windows/Linux 具备对应沙箱实现前，命令执行会被拒绝。
-- Agent 的文件操作受所选工作区约束；涉及写入或命令的操作会在执行前请求批准。
+模型请求会把完成任务所需的上下文发送给用户选择的模型服务商；外部 MCP 也可能将数据发送至其服务端。请勿提供不必要的敏感信息。
 
-## 项目结构
+## 架构概览
+
+```text
+React Renderer
+    │  仅调用白名单业务 API
+Electron Preload
+    │  参数校验后的 IPC
+Electron Main
+    │  JSON Lines（stdin / stdout）
+Python Agent
+    ├── SQLite、知识索引与 LangGraph 工作流
+    ├── 工作区文件、Git 与命令工具
+    └── 用户配置的模型与 MCP 服务
+```
+
+Renderer 不直接访问 Node.js、文件系统、Shell、SQLite 或密钥。Python Agent 是本地业务数据的单写入者。
+
+## 快速开始
+
+前置条件：Node.js `>=22.13`、npm 与 Python `>=3.11`（推荐 Python 3.12）。完成桌面端依赖安装和 Agent 环境准备后，使用下方的开发启动命令运行应用。
+
+启动后依次：进入“设置 → 模型”添加并测试模型连接，选择本地工作区，选择角色和审批模式，再发送任务。
+
+开发或 CI 可用 `WORKBEE_DEEPSEEK_API_KEY` 临时提供默认模型密钥。不要将真实密钥写入 `.env`、源码或提交记录。
+
+## 开发
+
+启动桌面端开发环境：
+
+```bash
+cd apps/desktop
+npm run desktop:dev
+```
+
+首次运行前，按对应子项目的依赖说明完成安装与 Agent 环境准备。
+
+## 生产打包
+
+### 桌面软件
+
+```bash
+cd apps/desktop
+npm run desktop:dist
+```
+
+桌面安装包与发布产物生成在 `apps/desktop/release/`。
+
+### 官网
+
+```bash
+cd apps/website
+npm run build
+```
+
+官网生产静态文件由此命令生成。正式对外分发前仍应完成目标平台签名、公证、安装验证和下载渠道配置。
+
+## 安全边界
+
+- API Key 与 MCP Token 由 Electron 系统安全存储保护，不写入项目目录、SQLite、协议消息或日志。
+- Agent 只能在用户选择的工作区内处理文件；写文件和命令执行需在界面中获得批准。
+- macOS 命令经 Seatbelt 限制网络和工作区外访问；Windows/Linux 的等价命令沙箱尚未实现，因此命令执行会被拒绝。
+- “本地优先”不等于数据永不离开设备：模型和外部 MCP 服务会接收完成请求所需的数据。
+
+## 仓库结构
 
 ```text
 WorkBee/
 ├── apps/
 │   ├── desktop/
-│   │   ├── src/                    # React 渲染进程
-│   │   ├── electron/               # Main、Preload、Agent 进程与密钥边界
+│   │   ├── src/                  # React Renderer
+│   │   ├── electron/             # Main、Preload、凭证与 Agent 进程管理
 │   │   └── agent/
-│   │       ├── aivra_agent/
-│   │       │   ├── runtime/        # JSONL 生命周期与协议收发
-│   │       │   ├── graphs/         # LangGraph Agent 工作流
-│   │       │   ├── tools/          # 受工作区限制的文件与 Git 工具
-│   │       │   └── storage/        # SQLite migration / repository
-│   │       └── tests/
-│   └── website/                    # 独立官网
-├── packages/protocol/              # v1 JSON Schema、类型与协议测试
-├── docs/adr/                       # 架构决策记录
-├── AGENT.md                        # 安全与架构约束
+│   │       ├── workbee_agent/    # Python runtime、工具、知识库与 SQLite
+│   │       ├── tests/
+│   │       └── pyproject.toml
+│   └── website/                  # 独立官网
+├── packages/protocol/            # v1 Schema、TS 类型与协议测试
+├── AGENT.md                      # 维护与安全约束
 └── README.md
 ```
 
-## 开发环境
+`apps/desktop/dist/`、`apps/desktop/release/`、`apps/desktop/agent/{build,dist}/` 和依赖目录均为生成物，不作为源代码修改。
 
-需要 Node.js `>=22.13`、npm 与 Python `>=3.11`（推荐 3.12）。
+## 后续方向
 
-```bash
-cd apps/desktop
-npm ci
-npm run agent:setup
-npm run desktop:dev
-```
+当前版本不依赖 WorkBee 云端 Server。后续工作包括本地 Embedding、跨编码器重排、Windows/Linux 命令沙箱、签名/公证与自动更新；这些事项不应被表述为已交付能力。
 
-首次启动后，在左下角头像菜单中进入“设置 → 模型”，添加并测试模型连接，再选择工作区开始任务。开发或 CI 可通过 `AIVRA_DEEPSEEK_API_KEY` 临时提供默认 DeepSeek 模型的密钥；不要将真实 Key 写进 `.env` 或提交到 Git。
-
-## 验证与打包
-
-```bash
-cd apps/desktop
-npm test              # 桌面端、协议与 Python Agent 测试
-npm run desktop:dist  # 当前平台发布包
-```
-
-`desktop:dist` 会先执行 TypeScript/Renderer 构建和 PyInstaller `onedir` Agent 构建，再生成当前平台的发布包；无需额外执行 `build` 或 `agent:build`。Windows 会生成安装程序和免安装 ZIP，产物位于 `apps/desktop/release/`。`desktop:pack` 仅用于本地检查未安装应用目录。正式分发仍需要完成相应平台的签名、公证与发布配置。
-
-官网可独立构建：
-
-```bash
-cd apps/website
-npm ci
-npm run build
-```
-
-## 推荐体验路径
-
-```text
-启动应用 → 配置并测试模型 → 选择工作区 → 选择角色与审批模式 → 发送任务
-→ 按需使用 @ 添加插件、技能或知识文档 → Agent 读取文件
-→ 写入或命令操作请求审批 → 批准/拒绝 → 查看结果与历史记录
-```
-
-## 路线图
-
-当前版本已完成本地 Agent 闭环、安全续跑、有界多智能体协作与独立质检、向量与关键词混合检索增强，以及本地管理的通用 MCP Tool 注册机制。后续方向包括本地 Embedding、跨编码器重排、Windows/Linux 命令沙箱、签名与自动更新；不规划 WorkBee 云端 Server。
-
-详细安全与架构约束见 [AGENT.md](./AGENT.md)，凭证交接决策见 [ADR 0001](./docs/adr/0001-local-agent-protocol.md)。
+开发与修改边界见 [AGENT.md](./AGENT.md)。

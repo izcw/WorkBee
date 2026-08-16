@@ -57,10 +57,10 @@ export function Sidebar({ page, onNavigate, openSettings }: { page: PageId; onNa
   const [openTreeMenu, setOpenTreeMenu] = useState('');
   const [editingProject, setEditingProject] = useState<Workspace | null>(null);
   const [expandedProjects, setExpandedProjects] = useState<string[]>(() => {
-    try { const saved = JSON.parse(localStorage.getItem('aivra.expandedProjects.v1') || '[]'); return Array.isArray(saved) ? saved : []; }
+    try { const saved = JSON.parse(localStorage.getItem('workbee.expandedProjects.v1') || '[]'); return Array.isArray(saved) ? saved : []; }
     catch { return []; }
   });
-  useEffect(() => { localStorage.setItem('aivra.expandedProjects.v1', JSON.stringify(expandedProjects)); }, [expandedProjects]);
+  useEffect(() => { localStorage.setItem('workbee.expandedProjects.v1', JSON.stringify(expandedProjects)); }, [expandedProjects]);
   useEffect(() => {
     const dismiss = () => setOpenTreeMenu('');
     addEventListener('mousedown', dismiss);
@@ -130,7 +130,7 @@ export function Sidebar({ page, onNavigate, openSettings }: { page: PageId; onNa
 function TerminalPanel({ workspace, close }: { workspace: Workspace | null; close: () => void }) {
   const [terminalInput, setTerminalInput] = useState('');
   const [terminalLines, setTerminalLines] = useState<string[]>(['WorkBee Terminal · 当前工作区命令窗口', '输入命令并按 Enter 执行']);
-  return <section className="terminal-panel"><header><span><Terminal size={14}/>终端{workspace && <small>{workspace.path}</small>}</span><button onClick={close} aria-label="关闭终端"><X size={15}/></button></header><div className="terminal-output">{terminalLines.map((line, index) => <div key={`${line}-${index}`}>{line}</div>)}</div><form onSubmit={async event => { event.preventDefault(); const command = terminalInput.trim(); if (!command) return; setTerminalLines(lines => [...lines, `$ ${command}`]); setTerminalInput(''); try { const result = await window.aivraDesktop?.agent.executeCommand({ command, cwd: workspace?.path }); setTerminalLines(lines => [...lines, ...(result ? [result.stdout, result.stderr].filter(Boolean) : ['桌面端不可用'])]); } catch (error) { setTerminalLines(lines => [...lines, error instanceof Error ? error.message : String(error)]); } }}><span>$</span><input value={terminalInput} onChange={event => setTerminalInput(event.target.value)} placeholder={workspace ? '输入命令…' : '请先选择项目文件夹'} disabled={!workspace}/></form></section>;
+  return <section className="terminal-panel"><header><span><Terminal size={14}/>终端{workspace && <small>{workspace.path}</small>}</span><button onClick={close} aria-label="关闭终端"><X size={15}/></button></header><div className="terminal-output">{terminalLines.map((line, index) => <div key={`${line}-${index}`}>{line}</div>)}</div><form onSubmit={async event => { event.preventDefault(); const command = terminalInput.trim(); if (!command) return; setTerminalLines(lines => [...lines, `$ ${command}`]); setTerminalInput(''); try { const result = await window.workbeeDesktop?.agent.executeCommand({ command, cwd: workspace?.path }); setTerminalLines(lines => [...lines, ...(result ? [result.stdout, result.stderr].filter(Boolean) : ['桌面端不可用'])]); } catch (error) { setTerminalLines(lines => [...lines, error instanceof Error ? error.message : String(error)]); } }}><span>$</span><input value={terminalInput} onChange={event => setTerminalInput(event.target.value)} placeholder={workspace ? '输入命令…' : '请先选择项目文件夹'} disabled={!workspace}/></form></section>;
 }
 
 export function AppLayout({ page, onNavigate, children, right, marketView, onMarketViewChange }: { page: PageId; onNavigate: (page: PageId) => void; children: React.ReactNode; right?: React.ReactNode; marketView?: 'market' | 'mine'; onMarketViewChange?: (view: 'market' | 'mine') => void }) {
@@ -140,19 +140,19 @@ export function AppLayout({ page, onNavigate, children, right, marketView, onMar
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'profile' | 'general' | 'models'>('profile');
   const [terminalOpen, setTerminalOpen] = useState(false);
-  const isMac = window.aivraDesktop?.platform === 'darwin';
+  const isMac = window.workbeeDesktop?.platform === 'darwin';
   useEffect(() => {
     if (page !== 'chat') setTerminalOpen(false);
   }, [page]);
   useEffect(() => {
     const openRightPanel = () => setRightCollapsed(false);
-    addEventListener('aivra:open-right-panel', openRightPanel);
-    return () => removeEventListener('aivra:open-right-panel', openRightPanel);
+    addEventListener('workbee:open-right-panel', openRightPanel);
+    return () => removeEventListener('workbee:open-right-panel', openRightPanel);
   }, []);
   useEffect(() => {
     const openModelSettings = () => { setSettingsSection('models'); setSettingsOpen(true); };
-    addEventListener('aivra:open-settings-models', openModelSettings);
-    return () => removeEventListener('aivra:open-settings-models', openModelSettings);
+    addEventListener('workbee:open-settings-models', openModelSettings);
+    return () => removeEventListener('workbee:open-settings-models', openModelSettings);
   }, []);
   return <div className={`app-shell platform-${isMac ? 'darwin' : 'windows'} ${right ? 'has-right' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${rightCollapsed ? 'right-collapsed' : ''}`}>
     <header className="drag-region">
@@ -160,7 +160,7 @@ export function AppLayout({ page, onNavigate, children, right, marketView, onMar
       {page === 'chat' && <strong>{workspace?.name || ''}</strong>}
       {(page === 'skills' || page === 'plugins') && <div className="drag-tabs"><button className={marketView !== 'mine' ? 'active' : ''} onClick={() => onMarketViewChange?.('market')}>{page === 'skills' ? '技能市场' : '插件市场'}</button><button className={marketView === 'mine' ? 'active' : ''} onClick={() => onMarketViewChange?.('mine')}>我的</button></div>}
       {right && <>{page === 'chat' && <button className="drag-control drag-terminal" onClick={() => setTerminalOpen(value => !value)} aria-label={terminalOpen ? '关闭终端' : '打开终端'}>{terminalOpen ? <PanelBottom size={17}/> : <Terminal size={17}/>}</button>}<button className="drag-control drag-right" onClick={() => setRightCollapsed(value => !value)} aria-label={rightCollapsed ? '展开右侧栏' : '隐藏右侧栏'}>{rightCollapsed ? <PanelRightOpen size={17}/> : <PanelRightClose size={17}/>}</button></>}
-      {!isMac && <div className="window-controls" aria-label="Window controls"><button title="Minimize" aria-label="Minimize" onClick={() => void window.aivraDesktop?.window.minimize()}><Minus size={16}/></button><button title="Maximize" aria-label="Maximize" onClick={() => void window.aivraDesktop?.window.maximize()}><Square size={14}/></button><button className="close" title="Close" aria-label="Close" onClick={() => void window.aivraDesktop?.window.close()}><X size={16}/></button></div>}
+      {!isMac && <div className="window-controls" aria-label="Window controls"><button title="Minimize" aria-label="Minimize" onClick={() => void window.workbeeDesktop?.window.minimize()}><Minus size={16}/></button><button title="Maximize" aria-label="Maximize" onClick={() => void window.workbeeDesktop?.window.maximize()}><Square size={14}/></button><button className="close" title="Close" aria-label="Close" onClick={() => void window.workbeeDesktop?.window.close()}><X size={16}/></button></div>}
     </header>
     {!sidebarCollapsed && <Sidebar page={page} onNavigate={onNavigate} openSettings={() => { setSettingsSection('profile'); setSettingsOpen(true); }}/>}
     <main className="workspace">{children}{terminalOpen && <TerminalPanel workspace={workspace} close={() => setTerminalOpen(false)}/>}</main>

@@ -7,7 +7,7 @@ import { roleAvatar } from '../data/roleAvatars';
 import { SKILL_CATALOG, KNOWLEDGE_DOCUMENTS } from '../data/catalog';
 import { PLUGIN_CATALOG } from '../pages/MarketPage';
 
-const fallbackRoles: RoleConfig[] = [{ id: 'aivra', name: 'BeeYo', role: '全能统筹 Agent', modelId: 'deepseek-default', modelName: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', keyAvailable: false, description: '统筹并完成开发、工作、设计与文件处理。', skills: ['全局规划与执行', '文件读写与整理', '软件开发与测试'], knowledge: ['aivra-working-principles', 'planning-delivery-playbook'] }];
+const fallbackRoles: RoleConfig[] = [{ id: 'workbee', name: 'BeeYo', role: '全能统筹 Agent', modelId: 'deepseek-default', modelName: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', keyAvailable: false, description: '统筹并完成开发、工作、设计与文件处理。', skills: ['全局规划与执行', '文件读写与整理', '软件开发与测试'], knowledge: ['workbee-working-principles', 'planning-delivery-playbook'] }];
 type MentionItem = { id: string; label: string; category: '插件' | '技能' | '文档'; description: string };
 type MentionPosition = { left: number; top: number; width: number; maxHeight: number; placement: 'above' | 'below' };
 
@@ -41,7 +41,7 @@ function SelectedRoleAvatar({ role }: { role: RoleConfig }) {
   return <span className="selected-role-avatar" onMouseEnter={show} onMouseLeave={close}><img src={roleAvatar(role)} alt={role.name}/>{tip && createPortal(<span className="role-avatar-tip" style={{ left: tip.left, top: tip.top }} onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); }} onMouseLeave={close}><strong>{role.name}</strong><small>{(role.description || role.role).slice(0,56)}</small></span>, document.body)}</span>;
 }
 
-export function Composer({ compact = false, value: controlledValue, onChange, onSubmit, disabled = false, mode: controlledMode, onModeChange, roles: configuredRoles = fallbackRoles, selectedRoleId = 'aivra', selectedRoleIds: chosenRoleIds = [selectedRoleId], onRoleChange, approvalMode = 'request', onApprovalModeChange }: { compact?: boolean; value?: string; onChange?: (value: string) => void; onSubmit?: (value: string) => void; disabled?: boolean; mode?: 'chat' | 'task'; onModeChange?: (mode: 'chat' | 'task') => void; roles?: RoleConfig[]; selectedRoleId?: string; onRoleChange?: (id: string) => void; selectedRoleIds?: string[]; approvalMode?: 'request' | 'auto' | 'full'; onApprovalModeChange?: (mode: 'request' | 'auto' | 'full') => void }) {
+export function Composer({ compact = false, value: controlledValue, onChange, onSubmit, disabled = false, mode: controlledMode, onModeChange, roles: configuredRoles = fallbackRoles, selectedRoleId = 'workbee', selectedRoleIds: chosenRoleIds = [selectedRoleId], onRoleChange, approvalMode = 'request', onApprovalModeChange }: { compact?: boolean; value?: string; onChange?: (value: string) => void; onSubmit?: (value: string) => void; disabled?: boolean; mode?: 'chat' | 'task'; onModeChange?: (mode: 'chat' | 'task') => void; roles?: RoleConfig[]; selectedRoleId?: string; onRoleChange?: (id: string) => void; selectedRoleIds?: string[]; approvalMode?: 'request' | 'auto' | 'full'; onApprovalModeChange?: (mode: 'request' | 'auto' | 'full') => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);

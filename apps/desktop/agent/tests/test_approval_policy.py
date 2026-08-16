@@ -1,4 +1,4 @@
-from aivra_agent.runtime.server import AgentServer
+from workbee_agent.runtime.server import AgentServer
 
 
 def test_request_mode_asks_for_all_side_effects():

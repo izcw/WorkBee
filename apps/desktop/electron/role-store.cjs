@@ -5,10 +5,10 @@ const { randomUUID } = require('node:crypto');
 const ROLE_STORE_VERSION = 5;
 const DEFAULT_ROLES = [
   {
-    id: 'aivra', name: 'BeeYo', role: '全能统筹 Agent', modelId: 'deepseek-default', avatar: 'builtin:aivra',
+    id: 'workbee', name: 'BeeYo', role: '全能统筹 Agent', modelId: 'deepseek-default', avatar: 'builtin:workbee',
     description: '负责全盘统筹、需求澄清、任务规划和落地交付。能够在授权工作区内主动读取、创建和修改文件，协调专业角色完成开发、设计、办公、研究和结果复核。',
     skills: ['全局规划与执行', '文件读写与整理', '软件开发与测试', '产品与设计协作', '文档与办公处理', '研究与数据分析'],
-    knowledge: ['aivra-working-principles', 'planning-delivery-playbook'],
+    knowledge: ['workbee-working-principles', 'planning-delivery-playbook'],
   },
   {
     id: 'nova', name: 'Codeo', role: '软件工程 Agent', modelId: 'deepseek-default', avatar: 'default:2',
@@ -71,7 +71,7 @@ class RoleStore {
         return migrated;
       }
       if (Array.isArray(value)) {
-        const previousDefault = value.find(item => item?.id === 'aivra') || {};
+        const previousDefault = value.find(item => item?.id === 'workbee') || {};
         const migrated = DEFAULT_ROLES.map((role, index) => index === 0 ? {
           ...role, modelId: previousDefault.modelId || role.modelId,
           ...(previousDefault.avatar ? { avatar: previousDefault.avatar } : {}),

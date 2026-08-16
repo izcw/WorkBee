@@ -27,7 +27,7 @@ export function App() {
     return () => removeEventListener('hashchange', sync);
   }, []);
   useEffect(() => {
-    window.aivraDesktop?.plugins.githubStatus().then(status => setGithubConnected(status.connected)).catch(() => undefined);
+    window.workbeeDesktop?.plugins.githubStatus().then(status => setGithubConnected(status.connected)).catch(() => undefined);
   }, []);
   const navigate = (next: PageId) => { location.hash = `/${next}`; setPage(next); };
   const content = page === 'home' ? <HomePage onNavigate={navigate} />

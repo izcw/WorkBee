@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('aivraDesktop', {
+contextBridge.exposeInMainWorld('workbeeDesktop', {
   platform: process.platform,
   isDesktop: true,
   window: {

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from aivra_agent.storage import Database
+from workbee_agent.storage import Database
 
 
 def test_thread_history_survives_database_reopen(tmp_path: Path):
@@ -31,7 +31,7 @@ def test_new_conversation_has_independent_history_in_same_workspace(tmp_path: Pa
     workspace = database.select_workspace(workspace_path)
     first_thread = database.create_thread(workspace["id"], "第一段对话")
     first_run = database.create_run(first_thread, "第一段对话", "chat")
-    database.add_message(first_thread, first_run, "assistant", "第一段回答", "aivra")
+    database.add_message(first_thread, first_run, "assistant", "第一段回答", "workbee")
 
     second_thread = database.create_thread(workspace["id"], "新的独立对话")
     database.create_run(second_thread, "新的独立对话", "chat")
@@ -116,8 +116,8 @@ def test_token_usage_is_aggregated_by_model_and_run(tmp_path: Path):
     workspace = database.select_workspace(workspace_path)
     thread_id = database.create_thread(workspace["id"], "统计 token")
     run_id = database.create_run(thread_id, "统计 token", "task")
-    database.record_token_usage(run_id, thread_id, "aivra", "deepseek", "deepseek-v4", 80, 20, 100)
-    database.record_token_usage(run_id, thread_id, "aivra", "deepseek", "deepseek-v4", 30, 10, 40)
+    database.record_token_usage(run_id, thread_id, "workbee", "deepseek", "deepseek-v4", 80, 20, 100)
+    database.record_token_usage(run_id, thread_id, "workbee", "deepseek", "deepseek-v4", 30, 10, 40)
     database.set_run_status(run_id, "completed")
 
     summary = database.usage_summary()
@@ -157,7 +157,7 @@ def test_incomplete_run_can_be_recovered_before_side_effects(tmp_path: Path):
     database.save_checkpoint(run_id, {
         "workspaceId": workspace["id"],
         "mode": "task",
-        "roleIds": ["aivra", "nova"],
+        "roleIds": ["workbee", "nova"],
         "approvalMode": "request",
         "documents": ["README.md"],
         "sideEffectsCompleted": False,
@@ -172,7 +172,7 @@ def test_incomplete_run_can_be_recovered_before_side_effects(tmp_path: Path):
     resumed = database.prepare_run_resume(run_id)
     assert resumed is not None
     assert resumed["thread_id"] == thread_id
-    assert resumed["roleIds"] == ["aivra", "nova"]
+    assert resumed["roleIds"] == ["workbee", "nova"]
     assert database.prepare_run_resume(run_id) is None
     database.close()
 
@@ -187,7 +187,7 @@ def test_run_is_not_replayed_after_side_effect_completed(tmp_path: Path):
     database.save_checkpoint(run_id, {
         "workspaceId": workspace["id"],
         "mode": "task",
-        "roleIds": ["aivra"],
+        "roleIds": ["workbee"],
         "sideEffectsCompleted": True,
     })
     database.set_run_status(run_id, "waiting_approval")
@@ -209,7 +209,7 @@ def test_run_is_not_replayed_when_side_effect_outcome_is_unknown(tmp_path: Path)
     database.save_checkpoint(run_id, {
         "workspaceId": workspace["id"],
         "mode": "task",
-        "roleIds": ["aivra"],
+        "roleIds": ["workbee"],
         "sideEffectStarted": True,
         "sideEffectsCompleted": False,
     })

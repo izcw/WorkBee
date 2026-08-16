@@ -23,7 +23,7 @@ type McpServerConfig = { id: string; name: string; url: string; enabled: boolean
 type AppSettings = { workspaceDir: string; defaultWorkspaceDir: string };
 
 interface Window {
-  aivraDesktop?: {
+  workbeeDesktop?: {
     platform: string;
     isDesktop: true;
     window: { minimize(): Promise<void>; maximize(): Promise<void>; close(): Promise<void> };

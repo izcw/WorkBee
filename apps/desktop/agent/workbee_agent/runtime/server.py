@@ -21,7 +21,7 @@ from ..storage import Database
 from ..tools import ToolError, ToolRegistry
 
 BUILTIN_KNOWLEDGE = {
-    "aivra-working-principles": (
+    "workbee-working-principles": (
         "通用工作准则：先澄清目标、交付物、约束与风险；再检查现有项目和可用资料；"
         "将任务拆成可验证步骤，执行后用文件内容、测试或命令结果复核，不虚构已完成的操作。"
     ),
@@ -163,17 +163,17 @@ class PendingApproval:
 
 class AgentServer:
     def __init__(self) -> None:
-        data_dir = Path(os.environ.get("AIVRA_DATA_DIR", str(Path.home() / ".aivra")))
-        self.database = Database(data_dir / "aivra.sqlite3")
+        data_dir = Path(os.environ.get("WORKBEE_DATA_DIR", str(Path.home() / ".workbee")))
+        self.database = Database(data_dir / "workbee.sqlite3")
         self.database.interrupt_incomplete_runs()
-        self.api_key = os.environ.get("AIVRA_DEEPSEEK_API_KEY", "")
-        self.model = os.environ.get("AIVRA_MODEL", "deepseek-v4-flash")
-        self.base_url = os.environ.get("AIVRA_BASE_URL", "https://api.deepseek.com")
+        self.api_key = os.environ.get("WORKBEE_DEEPSEEK_API_KEY", "")
+        self.model = os.environ.get("WORKBEE_MODEL", "deepseek-v4-flash")
+        self.base_url = os.environ.get("WORKBEE_BASE_URL", "https://api.deepseek.com")
         self.providers = self._load_providers()
-        self.github_mcp_token = os.environ.get("AIVRA_GITHUB_MCP_TOKEN", "")
+        self.github_mcp_token = os.environ.get("WORKBEE_GITHUB_MCP_TOKEN", "")
         self.mcp_servers = self._load_mcp_servers()
-        self.embedding_provider = EmbeddingProvider.from_environment(os.environ.get("AIVRA_EMBEDDING_PROVIDER", ""))
-        self.max_tool_steps = self._int_env("AIVRA_MAX_TOOL_STEPS", 12, 4, 100)
+        self.embedding_provider = EmbeddingProvider.from_environment(os.environ.get("WORKBEE_EMBEDDING_PROVIDER", ""))
+        self.max_tool_steps = self._int_env("WORKBEE_MAX_TOOL_STEPS", 12, 4, 100)
         self._write_lock = threading.Lock()
         self._shutdown = threading.Event()
         self._runs: Dict[str, threading.Event] = {}
@@ -192,7 +192,7 @@ class AgentServer:
     @staticmethod
     def _load_mcp_servers() -> List[Dict[str, Any]]:
         try:
-            value = json.loads(os.environ.get("AIVRA_MCP_SERVERS", "[]"))
+            value = json.loads(os.environ.get("WORKBEE_MCP_SERVERS", "[]"))
             if not isinstance(value, list):
                 return []
             return [
@@ -203,9 +203,9 @@ class AgentServer:
             return []
 
     def _load_providers(self) -> Dict[str, Dict[str, Any]]:
-        fallback = {"aivra": {"name": "BeeYo", "description": "默认 Agent", "skills": [], "knowledge": [], "apiKey": self.api_key, "modelId": self.model, "model": self.model, "baseUrl": self.base_url}}
+        fallback = {"workbee": {"name": "BeeYo", "description": "默认 Agent", "skills": [], "knowledge": [], "apiKey": self.api_key, "modelId": self.model, "model": self.model, "baseUrl": self.base_url}}
         try:
-            value = json.loads(os.environ.get("AIVRA_ROLE_PROVIDERS", ""))
+            value = json.loads(os.environ.get("WORKBEE_ROLE_PROVIDERS", ""))
             if not isinstance(value, dict):
                 return fallback
             providers: Dict[str, Dict[str, Any]] = {}
@@ -356,7 +356,7 @@ class AgentServer:
         workspace_id = self._required_string(payload, "workspaceId")
         prompt = self._required_string(payload, "prompt")
         mode = payload.get("mode", "task")
-        role_ids = payload.get("roleIds", [payload.get("roleId", "aivra")])
+        role_ids = payload.get("roleIds", [payload.get("roleId", "workbee")])
         approval_mode = payload.get("approvalMode", "request")
         workflow_name = str(payload.get("workflowName") or "")[:80]
         documents = payload.get("documents", [])
@@ -398,7 +398,7 @@ class AgentServer:
         worker = threading.Thread(
             target=self._execute_run,
             args=(run_id, thread_id, workspace, mode, role_ids, approval_mode, workflow_name, documents, cancel),
-            name=f"aivra-run-{run_id[:8]}", daemon=True,
+            name=f"workbee-run-{run_id[:8]}", daemon=True,
         )
         with self._state_lock:
             self._workers[run_id] = worker
@@ -422,7 +422,7 @@ class AgentServer:
             return
         role_ids = [item for item in recovered.get("roleIds", []) if item in self.providers]
         if not role_ids:
-            role_ids = [str(recovered.get("role_id") or "aivra")]
+            role_ids = [str(recovered.get("role_id") or "workbee")]
         cancel = threading.Event()
         with self._state_lock:
             self._runs[run_id] = cancel
@@ -436,7 +436,7 @@ class AgentServer:
                 str(recovered.get("approvalMode") or "request"), str(recovered.get("workflowName") or ""),
                 list(recovered.get("documents") or []), cancel,
             ),
-            name=f"aivra-resume-{run_id[:8]}", daemon=True,
+            name=f"workbee-resume-{run_id[:8]}", daemon=True,
         )
         with self._state_lock:
             self._workers[run_id] = worker
@@ -468,7 +468,7 @@ class AgentServer:
 
         try:
             team_task = mode == "task" and len(role_ids) > 1
-            role_id = "aivra" if team_task and "aivra" in role_ids else role_ids[0]
+            role_id = "workbee" if team_task and "workbee" in role_ids else role_ids[0]
             provider = self.providers[role_id]
             if not provider["apiKey"]:
                 raise RuntimeError(f"请先为协调角色 {provider['name']} 配置 API Key")
@@ -498,7 +498,7 @@ class AgentServer:
                     on_delta=lambda _delta: None, cancel_event=cancel, streaming=False,
                     temperature=0, timeout=20, max_retries=0, max_tokens=24,
                 )
-                roster_order = [item for item in role_ids if item != "aivra"] + [item for item in role_ids if item == "aivra"]
+                roster_order = [item for item in role_ids if item != "workbee"] + [item for item in role_ids if item == "workbee"]
                 roster, recent_dialogue = compact_role_selector_context(thread["messages"], self.providers, roster_order)
                 selector_response = selector_graph.invoke([
                     SystemMessage(content=(
@@ -606,7 +606,7 @@ class AgentServer:
             advice_items: List[str] = []
             specialist_ids = role_ids[1:] if team_task else []
             if specialist_ids:
-                with ThreadPoolExecutor(max_workers=min(3, len(specialist_ids)), thread_name_prefix="aivra-specialist") as executor:
+                with ThreadPoolExecutor(max_workers=min(3, len(specialist_ids)), thread_name_prefix="workbee-specialist") as executor:
                     futures = {}
                     for collaborator_id in specialist_ids:
                         collaborator = self.providers[collaborator_id]
@@ -736,7 +736,7 @@ class AgentServer:
         except Exception as exc:
             safe_message = str(exc)[:1000] or "Agent run failed"
             print(f"run {run_id} failed: {type(exc).__name__}: {safe_message}", file=sys.stderr)
-            if os.environ.get("AIVRA_DEBUG") == "1":
+            if os.environ.get("WORKBEE_DEBUG") == "1":
                 traceback.print_exc(file=sys.stderr)
             self.database.set_run_status(run_id, "failed", safe_message)
             emit("run.failed", {"runId": run_id, "threadId": thread_id, "message": safe_message})
@@ -866,7 +866,7 @@ class AgentServer:
                     self._indexing_workspaces.discard(workspace_id)
 
         threading.Thread(
-            target=refresh, name=f"aivra-index-{workspace_id[:8]}", daemon=True
+            target=refresh, name=f"workbee-index-{workspace_id[:8]}", daemon=True
         ).start()
 
     @staticmethod

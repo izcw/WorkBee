@@ -8,7 +8,7 @@ if (!existsSync(venvPython)) {
 }
 
 run(venvPython, [
-  '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--name', 'aivra-agent',
+  '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--name', 'workbee-agent',
   '--distpath', path.join(agentRoot, 'dist'), '--workpath', path.join(agentRoot, 'build'),
   '--specpath', agentRoot, '--paths', agentRoot,
   '--collect-all', 'langchain_openai', '--collect-all', 'langgraph',

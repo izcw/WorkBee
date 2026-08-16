@@ -1,24 +1,24 @@
 import json
 
-from aivra_agent.runtime.server import AgentServer, select_role_from_output, select_roles_from_output
+from workbee_agent.runtime.server import AgentServer, select_role_from_output, select_roles_from_output
 
 
 def test_role_provider_configuration_is_loaded_from_process_environment(tmp_path, monkeypatch):
-    monkeypatch.setenv("AIVRA_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("AIVRA_ROLE_PROVIDERS", json.dumps({
-        "aivra": {"name": "BeeYo", "baseUrl": "https://api.example.com/v1", "modelId": "provider-a", "model": "model-a", "apiKey": "test-key"},
+    monkeypatch.setenv("WORKBEE_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("WORKBEE_ROLE_PROVIDERS", json.dumps({
+        "workbee": {"name": "BeeYo", "baseUrl": "https://api.example.com/v1", "modelId": "provider-a", "model": "model-a", "apiKey": "test-key"},
         "emma": {"name": "Emma", "baseUrl": "https://other.example.com/v1", "model": "model-b", "apiKey": "other-key"},
     }))
     server = AgentServer()
-    assert server.providers["aivra"]["model"] == "model-a"
-    assert server.providers["aivra"]["modelId"] == "provider-a"
+    assert server.providers["workbee"]["model"] == "model-a"
+    assert server.providers["workbee"]["modelId"] == "provider-a"
     assert server.providers["emma"]["baseUrl"] == "https://other.example.com/v1"
     server.shutdown()
 
 
 def test_role_selector_accepts_json_fences_objects_and_text_names():
     providers = {
-        "aivra": {"name": "BeeYo"},
+        "workbee": {"name": "BeeYo"},
         "nova": {"name": "Codeo"},
         "mira": {"name": "Viso"},
         "sage": {"name": "Lexo"},
@@ -31,10 +31,10 @@ def test_role_selector_accepts_json_fences_objects_and_text_names():
 
 
 def test_role_selector_context_is_compact_and_keeps_latest_turn():
-    from aivra_agent.runtime.server import compact_role_selector_context
+    from workbee_agent.runtime.server import compact_role_selector_context
 
     providers = {
-        "aivra": {"name": "BeeYo", "description": "general" * 100, "skills": ["general"] * 20},
+        "workbee": {"name": "BeeYo", "description": "general" * 100, "skills": ["general"] * 20},
         "nova": {"name": "Codeo", "description": "engineering" * 100, "skills": ["code"] * 20},
     }
     messages = [
@@ -42,7 +42,7 @@ def test_role_selector_context_is_compact_and_keeps_latest_turn():
         for index in range(5)
     ] + [{"role": "user", "content": "latest request", "role_id": None}]
 
-    roster, dialogue = compact_role_selector_context(messages, providers, ["aivra", "nova"])
+    roster, dialogue = compact_role_selector_context(messages, providers, ["workbee", "nova"])
 
     assert "latest request" in dialogue
     assert "older-0" not in dialogue
@@ -58,4 +58,4 @@ def test_multi_agent_planner_accepts_ordered_role_lists_and_limits_selection():
         3,
     ) == ["sage", "nova", "mira"]
     assert select_roles_from_output("建议由 nova 与 sage 协作", candidates, 3) == ["nova", "sage"]
-    assert select_roles_from_output('{"roleIds":["aivra","unknown"]}', candidates, 3) == []
+    assert select_roles_from_output('{"roleIds":["workbee","unknown"]}', candidates, 3) == []

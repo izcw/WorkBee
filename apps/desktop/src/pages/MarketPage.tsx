@@ -24,22 +24,22 @@ function GithubConnectDialog({ close, connected, onConnected }: { close: () => v
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const openGithub = async () => {
-    if (!window.aivraDesktop) { setError('请在 WorkBee 桌面应用中打开 GitHub。'); return; }
-    try { await window.aivraDesktop.plugins.openGithubTokenPage(); }
+    if (!window.workbeeDesktop) { setError('请在 WorkBee 桌面应用中打开 GitHub。'); return; }
+    try { await window.workbeeDesktop.plugins.openGithubTokenPage(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   };
   const connect = async () => {
     if (!token.trim()) { setError('请输入 GitHub Personal Access Token。'); return; }
-    if (!window.aivraDesktop) { setError('请在 WorkBee 桌面应用中连接 GitHub MCP。'); return; }
+    if (!window.workbeeDesktop) { setError('请在 WorkBee 桌面应用中连接 GitHub MCP。'); return; }
     setSaving(true); setError('');
-    try { await window.aivraDesktop.plugins.connectGithub({ token }); onConnected(true); close(); }
+    try { await window.workbeeDesktop.plugins.connectGithub({ token }); onConnected(true); close(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
   const disconnect = async () => {
-    if (!window.aivraDesktop) return;
+    if (!window.workbeeDesktop) return;
     setSaving(true); setError('');
-    try { await window.aivraDesktop.plugins.disconnectGithub(); onConnected(false); close(); }
+    try { await window.workbeeDesktop.plugins.disconnectGithub(); onConnected(false); close(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
@@ -55,21 +55,21 @@ function McpServersDialog({ close, onChanged }: { close: () => void; onChanged: 
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const refresh = () => window.aivraDesktop?.plugins.listMcpServers().then(setServers).catch(reason => setError(String(reason)));
+  const refresh = () => window.workbeeDesktop?.plugins.listMcpServers().then(setServers).catch(reason => setError(String(reason)));
   useEffect(() => { void refresh(); }, []);
   const save = async () => {
-    if (!window.aivraDesktop) { setError('请在 WorkBee 桌面应用中配置 MCP。'); return; }
+    if (!window.workbeeDesktop) { setError('请在 WorkBee 桌面应用中配置 MCP。'); return; }
     setSaving(true); setError('');
     try {
-      await window.aivraDesktop.plugins.saveMcpServer({ name, url, token });
+      await window.workbeeDesktop.plugins.saveMcpServer({ name, url, token });
       setName(''); setUrl(''); setToken(''); await refresh(); onChanged();
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
   const remove = async (id: string) => {
-    if (!window.aivraDesktop || !confirm('确定删除这个 MCP 连接吗？')) return;
+    if (!window.workbeeDesktop || !confirm('确定删除这个 MCP 连接吗？')) return;
     setSaving(true); setError('');
-    try { await window.aivraDesktop.plugins.deleteMcpServer(id); await refresh(); onChanged(); }
+    try { await window.workbeeDesktop.plugins.deleteMcpServer(id); await refresh(); onChanged(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
@@ -106,12 +106,12 @@ export function MarketPage({ type, view, selectedSkillId, onSelectSkill, selecte
   const [connecting, setConnecting] = useState(false);
   const [configuringMcp, setConfiguringMcp] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
-  const refreshMcp = () => window.aivraDesktop?.plugins.listMcpServers().then(setMcpServers).catch(() => setMcpServers([]));
+  const refreshMcp = () => window.workbeeDesktop?.plugins.listMcpServers().then(setMcpServers).catch(() => setMcpServers([]));
   useEffect(() => { if (type === 'plugins') void refreshMcp(); }, [type]);
   const source = type === 'skills' ? SKILL_CATALOG : PLUGIN_CATALOG;
   const items = useMemo(() => source.filter(item => (category === '全部' || item.category === category) && `${item.title} ${item.desc} ${item.category}`.toLowerCase().includes(query.trim().toLowerCase())), [source, category, query]);
   const mine = type === 'skills' ? SKILL_CATALOG : PLUGIN_CATALOG.filter(item => item.id === 'github' && githubConnected);
-  const select = (id: string) => { if (type === 'skills') onSelectSkill?.(id); else onSelectPlugin?.(id); window.dispatchEvent(new Event('aivra:open-right-panel')); };
+  const select = (id: string) => { if (type === 'skills') onSelectSkill?.(id); else onSelectPlugin?.(id); window.dispatchEvent(new Event('workbee:open-right-panel')); };
   const shown = view === 'mine' ? mine.filter(item => `${item.title} ${item.desc}`.toLowerCase().includes(query.trim().toLowerCase())) : items;
   return <div className="market-page"><div className="market-filter-row"><div className="categories">{categories.map(x => <Pill key={x} active={category === x} onClick={() => setCategory(x)}>{x}</Pill>)}</div><SearchInput className="market-search" value={query} onChange={setQuery}/></div><div className="market-grid">{shown.map(item => <Card className={`market-card ${(type === 'skills' ? selectedSkillId : selectedPluginId) === item.id ? 'selected' : ''}`} key={item.id}><button className="market-card-main" onClick={() => select(item.id)}><img className="market-icon" src={item.icon} alt=""/><div><strong>{item.title}</strong><p className="two-line">{item.desc}</p><small>{item.category}　{item.count}</small></div></button>{type === 'plugins' && <button className={`market-card-status ${item.id === 'github' && githubConnected ? 'connected' : ''}`} title={item.id === 'github' && githubConnected ? '已连接' : '添加插件'} onClick={() => item.id === 'github' ? setConnecting(true) : select(item.id)}>{item.id === 'github' && githubConnected ? <Check size={16}/> : <Plus size={16}/>}</button>}</Card>)}{type === 'plugins' && view === 'mine' && mcpServers.filter(server => `${server.name} ${server.url}`.toLowerCase().includes(query.trim().toLowerCase())).map(server => <Card className="market-card" key={`mcp-${server.id}`}><div className="market-card-main"><i className="market-server-icon"><Server size={22}/></i><div><strong>{server.name}</strong><p className="two-line">{server.url}</p><small>自定义 MCP　{server.tokenAvailable ? '安全授权' : '无令牌'}</small></div></div><button className="market-card-status connected" title="管理连接" onClick={() => setConfiguringMcp(true)}><Check size={16}/></button></Card>)}{view === 'mine' && <button className="market-add-plugin" onClick={type === 'plugins' ? () => setConfiguringMcp(true) : onOpenMarket}><AddCard label={type === 'plugins' ? '添加 MCP' : '添加技能'}/><span>添加{type === 'plugins' ? ' MCP' : '技能'}</span></button>}</div>{shown.length === 0 && !(type === 'plugins' && view === 'mine' && mcpServers.length) && <p className="market-empty">没有找到匹配的{view === 'mine' ? '已添加项目' : '技能或插件'}。</p>}{connecting && <GithubConnectDialog close={() => setConnecting(false)} connected={githubConnected} onConnected={onGithubChanged}/>} {configuringMcp && <McpServersDialog close={() => setConfiguringMcp(false)} onChanged={() => void refreshMcp()}/>}</div>;
 }

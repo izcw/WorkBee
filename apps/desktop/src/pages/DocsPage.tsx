@@ -10,7 +10,7 @@ import './DocsPage.css';
 export function DocsPage() {
   const [documents, setDocuments] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('aivra.markdown-documents.v1') || '{}') as Record<string, string>;
+      const saved = JSON.parse(localStorage.getItem('workbee.markdown-documents.v1') || '{}') as Record<string, string>;
       return KNOWLEDGE_DOCUMENTS.map(document => saved[document.id] !== undefined ? { ...document, content: saved[document.id] } : document);
     } catch { return KNOWLEDGE_DOCUMENTS; }
   });
@@ -28,7 +28,7 @@ export function DocsPage() {
     const content = draft;
     const nextDocuments = documents.map(item => item.id === selectedId ? { ...item, content, updatedAt: '刚刚' } : item);
     setDocuments(nextDocuments);
-    localStorage.setItem('aivra.markdown-documents.v1', JSON.stringify(Object.fromEntries(nextDocuments.filter(item => item.type === 'markdown').map(item => [item.id, item.content || '']))));
+    localStorage.setItem('workbee.markdown-documents.v1', JSON.stringify(Object.fromEntries(nextDocuments.filter(item => item.type === 'markdown').map(item => [item.id, item.content || '']))));
     setDraft(content); setEditing(false);
   };
   const editorPlugins = [headingsPlugin(), listsPlugin(), quotePlugin(), thematicBreakPlugin(), markdownShortcutPlugin(), toolbarPlugin({ toolbarContents: () => <><UndoRedo/><BoldItalicUnderlineToggles/><BlockTypeSelect/><ListsToggle/><CreateLink/></> })];

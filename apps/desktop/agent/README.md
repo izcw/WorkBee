@@ -1,6 +1,6 @@
 # WorkBee Python Agent
 
-Python Agent 通过 stdin/stdout 接收一行一个 JSON 对象，stdout 只输出协议消息，诊断日志只写 stderr。开发入口为 `python -m aivra_agent`。
+Python Agent 通过 stdin/stdout 接收一行一个 JSON 对象，stdout 只输出协议消息，诊断日志只写 stderr。开发入口为 `python -m workbee_agent`。
 
 核心模块：
 

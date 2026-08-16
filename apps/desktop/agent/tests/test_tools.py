@@ -4,8 +4,8 @@ import subprocess
 
 import pytest
 
-from aivra_agent.tools import ToolError, ToolRegistry
-from aivra_agent.tools.github_mcp import RemoteMcpClient
+from workbee_agent.tools import ToolError, ToolRegistry
+from workbee_agent.tools.github_mcp import RemoteMcpClient
 
 
 def sandbox_available() -> bool:

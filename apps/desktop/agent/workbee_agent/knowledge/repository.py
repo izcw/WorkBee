@@ -159,9 +159,9 @@ class KnowledgeRepository:
         return list(dict.fromkeys([*selected, *files]))
 
     def _ignore_rules(self) -> List[tuple[str, bool]]:
-        """Read a practical gitignore subset from .gitignore and .aivraignore."""
+        """Read a practical gitignore subset from .gitignore and .workbeeignore."""
         rules: List[tuple[str, bool]] = []
-        for name in (".gitignore", ".aivraignore"):
+        for name in (".gitignore", ".workbeeignore"):
             try:
                 lines = (self.workspace / name).read_text(encoding="utf-8").splitlines()
             except (OSError, UnicodeDecodeError):

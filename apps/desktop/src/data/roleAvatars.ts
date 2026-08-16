@@ -8,7 +8,7 @@ import role6 from '../assets/images/team-avatars/role6.png';
 export const DEFAULT_ROLE_AVATARS = [role1, role2, role3, role4, role5, role6];
 
 const builtInRoleAvatars: Record<string, string> = {
-  aivra: role1,
+  workbee: role1,
 };
 
 export function roleAvatar(role?: Pick<RoleConfig, 'id' | 'avatar'>) {

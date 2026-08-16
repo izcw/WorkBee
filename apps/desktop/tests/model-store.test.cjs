@@ -10,9 +10,9 @@ const { testOpenAIConnection, testEmbeddingConnection } = require('../electron/p
 const { McpStore } = require('../electron/mcp-store.cjs');
 
 test('models support CRUD and roles reference a configured model', async t => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-models-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workbee-models-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const keys = new Map([['aivra', 'legacy-key']]);
+  const keys = new Map([['workbee', 'legacy-key']]);
   const secureStore = {
     getApiKey: async id => keys.get(id) || '',
     setApiKey: async (id, value) => value ? keys.set(id, value) : keys.delete(id),
@@ -26,13 +26,13 @@ test('models support CRUD and roles reference a configured model', async t => {
   assert.match(created.maskedKey, /^te\*+ey$/);
   const updated = await models.update({ id: created.id, name: 'Updated', model: 'test-model-v2' });
   assert.equal(updated.name, 'Updated');
-  await roles.save({ id: 'aivra', modelId: created.id, description: '全能执行角色', skills: ['文件读写与整理'], knowledge: ['aivra-working-principles'] });
+  await roles.save({ id: 'workbee', modelId: created.id, description: '全能执行角色', skills: ['文件读写与整理'], knowledge: ['workbee-working-principles'] });
   const providers = await roles.providersForAgent();
-  assert.equal(providers.aivra.model, 'test-model-v2');
-  assert.equal(providers.aivra.apiKey, 'test-key');
-  assert.equal(providers.aivra.description, '全能执行角色');
-  assert.deepEqual(providers.aivra.skills, ['文件读写与整理']);
-  assert.deepEqual(providers.aivra.knowledge, ['aivra-working-principles']);
+  assert.equal(providers.workbee.model, 'test-model-v2');
+  assert.equal(providers.workbee.apiKey, 'test-key');
+  assert.equal(providers.workbee.description, '全能执行角色');
+  assert.deepEqual(providers.workbee.skills, ['文件读写与整理']);
+  assert.deepEqual(providers.workbee.knowledge, ['workbee-working-principles']);
   assert.equal(await roles.usesModel(created.id), true);
   const embedding = await models.create({ name: 'Embedding', baseUrl: 'https://example.com/v1', model: 'embed-small', purpose: 'embedding', apiKey: 'embed-key' });
   assert.equal((await models.embeddingProvider()).id, embedding.id);
@@ -49,10 +49,10 @@ test('models support CRUD and roles reference a configured model', async t => {
 });
 
 test('legacy team data is reset once to the five default roles', async t => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-role-migration-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workbee-role-migration-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   await fs.writeFile(path.join(directory, 'roles.json'), JSON.stringify([
-    { id: 'aivra', name: '旧 Aivra', role: '旧角色', modelId: 'deepseek-default', avatar: 'default:3' },
+    { id: 'workbee', name: '旧 WorkBee', role: '旧角色', modelId: 'deepseek-default', avatar: 'default:3' },
     { id: 'ava', name: 'Ava', role: '招聘分析', modelId: 'deepseek-default' },
     { id: 'custom-old', name: '旧自定义', role: '旧角色', modelId: 'deepseek-default' },
   ]));
@@ -61,7 +61,7 @@ test('legacy team data is reset once to the five default roles', async t => {
   const roles = new RoleStore(app, new ModelStore(app, secureStore));
 
   const migrated = await roles.list();
-  assert.deepEqual(migrated.map(role => role.id), ['aivra', 'nova', 'mira', 'sage', 'lyra']);
+  assert.deepEqual(migrated.map(role => role.id), ['workbee', 'nova', 'mira', 'sage', 'lyra']);
   assert.equal(migrated[0].name, 'BeeYo');
   assert.equal(migrated[0].role, '全能统筹 Agent');
   assert.ok(migrated[0].skills.includes('软件开发与测试'));
@@ -76,24 +76,24 @@ test('legacy team data is reset once to the five default roles', async t => {
 });
 
 test('version two single-role data upgrades to five defaults and keeps later custom roles', async t => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-role-v2-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workbee-role-v2-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   await fs.writeFile(path.join(directory, 'roles.json'), JSON.stringify({ version: 2, roles: [
-    { id: 'aivra', name: 'Aivra', role: '全能工作 Agent', modelId: 'deepseek-default', avatar: 'default:5', skills: ['旧技能'] },
+    { id: 'workbee', name: 'WorkBee', role: '全能工作 Agent', modelId: 'deepseek-default', avatar: 'default:5', skills: ['旧技能'] },
     { id: 'custom-kept', name: '用户角色', role: '自定义', modelId: 'deepseek-default' },
   ] }));
   const secureStore = { getApiKey: async () => '', setApiKey: async () => undefined };
   const app = { getPath: () => directory };
   const migrated = await new RoleStore(app, new ModelStore(app, secureStore)).list();
 
-  assert.deepEqual(migrated.map(role => role.id), ['aivra', 'nova', 'mira', 'sage', 'lyra', 'custom-kept']);
+  assert.deepEqual(migrated.map(role => role.id), ['workbee', 'nova', 'mira', 'sage', 'lyra', 'custom-kept']);
   assert.equal(migrated[0].role, '全能统筹 Agent');
   assert.equal(migrated[0].avatar, 'default:5');
   assert.ok(migrated[0].skills.includes('全局规划与执行'));
 });
 
 test('default roles cannot be deleted while custom roles can', async t => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-role-delete-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workbee-role-delete-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const secureStore = { getApiKey: async () => '', setApiKey: async () => undefined };
   const app = { getPath: () => directory };
@@ -142,7 +142,7 @@ test('embedding connection test validates the vector response', async () => {
 });
 
 test('MCP configs persist locally while tokens stay in secure storage', async t => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-mcp-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workbee-mcp-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const keys = new Map();
   const secureStore = {

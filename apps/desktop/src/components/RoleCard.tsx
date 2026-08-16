@@ -38,7 +38,7 @@ function CompactRoleCard({ role, action }: { role: RoleConfig; action?: ReactNod
   const toggle = (element: HTMLElement) => {
     const rect = element.getBoundingClientRect();
     if (popover) { setPopover(null); return; }
-    window.dispatchEvent(new CustomEvent('aivra:role-card-open', { detail: { id: role.id } }));
+    window.dispatchEvent(new CustomEvent('workbee:role-card-open', { detail: { id: role.id } }));
     setPopover({ left: Math.max(12, rect.left - 260), top: Math.max(12, rect.top) });
   };
   useEffect(() => {
@@ -46,8 +46,8 @@ function CompactRoleCard({ role, action }: { role: RoleConfig; action?: ReactNod
       const id = (event as CustomEvent<{ id: string }>).detail?.id;
       if (id && id !== role.id) setPopover(null);
     };
-    window.addEventListener('aivra:role-card-open', closeOther);
-    return () => window.removeEventListener('aivra:role-card-open', closeOther);
+    window.addEventListener('workbee:role-card-open', closeOther);
+    return () => window.removeEventListener('workbee:role-card-open', closeOther);
   }, [role.id]);
   useEffect(() => {
     if (!popover) return;

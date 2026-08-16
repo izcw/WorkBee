@@ -38,7 +38,7 @@ class Database:
                   FOREIGN KEY(thread_id) REFERENCES threads(id)
                 );
                 CREATE TABLE IF NOT EXISTS runs(
-                  id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, status TEXT NOT NULL, mode TEXT NOT NULL, role_id TEXT NOT NULL DEFAULT 'aivra', error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                  id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, status TEXT NOT NULL, mode TEXT NOT NULL, role_id TEXT NOT NULL DEFAULT 'workbee', error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                   FOREIGN KEY(thread_id) REFERENCES threads(id)
                 );
                 CREATE TABLE IF NOT EXISTS approvals(
@@ -82,7 +82,7 @@ class Database:
             )
             columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(runs)").fetchall()}
             if "role_id" not in columns:
-                self._connection.execute("ALTER TABLE runs ADD COLUMN role_id TEXT NOT NULL DEFAULT 'aivra'")
+                self._connection.execute("ALTER TABLE runs ADD COLUMN role_id TEXT NOT NULL DEFAULT 'workbee'")
             message_columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(messages)").fetchall()}
             if "role_id" not in message_columns:
                 self._connection.execute("ALTER TABLE messages ADD COLUMN role_id TEXT")
@@ -135,7 +135,7 @@ class Database:
             )
         return thread_id
 
-    def create_run(self, thread_id: str, prompt: str, mode: str, role_id: str = "aivra") -> str:
+    def create_run(self, thread_id: str, prompt: str, mode: str, role_id: str = "workbee") -> str:
         run_id = str(uuid4())
         now = utc_now()
         with self._lock, self._connection:

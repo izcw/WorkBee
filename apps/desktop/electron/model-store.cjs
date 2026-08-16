@@ -63,7 +63,7 @@ class ModelStore {
   async _key(id) {
     const value = await this.secureStore.getApiKey(this._keyId(id));
     if (value) return value;
-    return id === DEFAULT_MODEL.id ? this.secureStore.getApiKey('aivra') : '';
+    return id === DEFAULT_MODEL.id ? this.secureStore.getApiKey('workbee') : '';
   }
 
   async list() {
@@ -98,7 +98,7 @@ class ModelStore {
     await this._write(models);
     if (input.clearApiKey === true) {
       await this.secureStore.setApiKey(this._keyId(id), '');
-      if (id === DEFAULT_MODEL.id) await this.secureStore.setApiKey('aivra', '');
+      if (id === DEFAULT_MODEL.id) await this.secureStore.setApiKey('workbee', '');
     }
     else if (typeof input.apiKey === 'string' && input.apiKey.trim()) await this.secureStore.setApiKey(this._keyId(id), input.apiKey);
     const key = await this._key(id);

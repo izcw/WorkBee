@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from aivra_agent.knowledge import KnowledgeRepository
-from aivra_agent.storage import Database
-from aivra_agent.tools import ToolRegistry
+from workbee_agent.knowledge import KnowledgeRepository
+from workbee_agent.storage import Database
+from workbee_agent.tools import ToolRegistry
 
 
 class FakeEmbedder:
@@ -81,7 +81,7 @@ def test_hybrid_retrieval_can_recall_semantically_related_chunk(tmp_path: Path):
     database.close()
 
 
-def test_index_respects_gitignore_and_aivraignore_with_negation(tmp_path: Path):
+def test_index_respects_gitignore_and_workbeeignore_with_negation(tmp_path: Path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "keep.md").write_text("保留的知识证据", encoding="utf-8")
@@ -91,7 +91,7 @@ def test_index_respects_gitignore_and_aivraignore_with_negation(tmp_path: Path):
     (generated / "hidden.md").write_text("生成内容", encoding="utf-8")
     (generated / "important.md").write_text("重要例外证据", encoding="utf-8")
     (workspace / ".gitignore").write_text("*.log\n", encoding="utf-8")
-    (workspace / ".aivraignore").write_text("generated/\n!generated/important.md\n", encoding="utf-8")
+    (workspace / ".workbeeignore").write_text("generated/\n!generated/important.md\n", encoding="utf-8")
     database = Database(tmp_path / "knowledge-ignore.sqlite3")
     selected = database.select_workspace(workspace)
     repository = KnowledgeRepository(database, selected["id"], workspace)

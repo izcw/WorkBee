@@ -27,7 +27,7 @@ lines.on('line', line => {
 `;
 
 async function temporaryManager(t) {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivra-agent-manager-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workbee-agent-manager-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const launches = path.join(directory, 'launches.txt');
   const app = { isPackaged: false, isQuitting: false, getPath: () => directory, getVersion: () => 'test' };
@@ -46,17 +46,17 @@ test('concurrent readiness checks share one Agent startup and verify health', as
   assert.equal((await manager.ensureReady()).status, 'ready');
 
   await manager.stop();
-  await assert.rejects(fs.access(path.join(directory, 'aivra-agent.pid.json')));
+  await assert.rejects(fs.access(path.join(directory, 'workbee-agent.pid.json')));
 });
 
 test('startup cleanup terminates an Agent whose recorded owner no longer exists', async t => {
   const { manager, directory } = await temporaryManager(t);
   const stale = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
   t.after(() => { if (stale.exitCode === null) stale.kill('SIGKILL'); });
-  await fs.writeFile(path.join(directory, 'aivra-agent.pid.json'), JSON.stringify({ pid: stale.pid, ownerPid: 2147483647, command: process.execPath, args: ['setInterval'] }));
+  await fs.writeFile(path.join(directory, 'workbee-agent.pid.json'), JSON.stringify({ pid: stale.pid, ownerPid: 2147483647, command: process.execPath, args: ['setInterval'] }));
 
   const exited = new Promise(resolve => stale.once('exit', resolve));
   await manager._cleanupStaleProcess();
   await Promise.race([exited, new Promise((_, reject) => setTimeout(() => reject(new Error('stale process did not exit')), 2000))]);
-  await assert.rejects(fs.access(path.join(directory, 'aivra-agent.pid.json')));
+  await assert.rejects(fs.access(path.join(directory, 'workbee-agent.pid.json')));
 });

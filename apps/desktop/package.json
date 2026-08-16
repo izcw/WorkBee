@@ -1,7 +1,7 @@
 {
-  "name": "@aivra/desktop",
+  "name": "@workbee/desktop",
   "description": "WorkBee desktop agent workspace",
-  "author": "Aivra",
+  "author": "WorkBee",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -35,7 +35,7 @@
     "wait-on": "latest"
   },
   "build": {
-    "appId": "com.aivra.desktop",
+    "appId": "com.workbee.desktop",
     "productName": "WorkBee",
     "electronDist": "node_modules/electron/dist",
     "icon": "electron/logo.png",
@@ -49,8 +49,8 @@
     ],
     "extraResources": [
       {
-        "from": "agent/dist/aivra-agent",
-        "to": "agent/aivra-agent"
+        "from": "agent/dist/workbee-agent",
+        "to": "agent/workbee-agent"
       }
     ],
     "mac": {

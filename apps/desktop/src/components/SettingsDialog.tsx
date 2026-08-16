@@ -97,7 +97,7 @@ export function SettingsDialog({ close, initialSection = 'profile' }: { close: (
 function formatTokens(value: number) { return new Intl.NumberFormat('zh-CN').format(value); }
 function formatDuration(seconds: number) { if (seconds < 60) return `${seconds} 秒`; if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟`; return `${(seconds / 3600).toFixed(1)} 小时`; }
 
-const localDataKeys = ['aivra.workflows.v5', 'aivra.workflows.v4', 'aivra.workflows.v3', 'aivra.projectPreferences.v1', 'aivra.activeProject.v1', 'aivra.activeThread.v1', 'aivra.tasks.v1', 'aivra.tasks.archive.v1', 'aivra.markdown-documents.v1', 'aivra.expandedProjects.v1'];
+const localDataKeys = ['workbee.workflows.v5', 'workbee.workflows.v4', 'workbee.workflows.v3', 'workbee.projectPreferences.v1', 'workbee.activeProject.v1', 'workbee.activeThread.v1', 'workbee.tasks.v1', 'workbee.tasks.archive.v1', 'workbee.markdown-documents.v1', 'workbee.expandedProjects.v1'];
 
 function GeneralSettings() {
   const [workspaceDir, setWorkspaceDir] = useState('');
@@ -106,7 +106,7 @@ function GeneralSettings() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    window.aivraDesktop?.settings.get()
+    window.workbeeDesktop?.settings.get()
       .then(settings => { setWorkspaceDir(settings.workspaceDir); setDefaultWorkspaceDir(settings.defaultWorkspaceDir); })
       .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)));
   }, []);
@@ -114,7 +114,7 @@ function GeneralSettings() {
   const changeWorkspaceDir = async () => {
     setBusy(true); setError('');
     try {
-      const selected = await window.aivraDesktop?.settings.selectWorkspaceDir();
+      const selected = await window.workbeeDesktop?.settings.selectWorkspaceDir();
       if (selected) setWorkspaceDir(selected.workspaceDir);
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setBusy(false); }
@@ -122,7 +122,7 @@ function GeneralSettings() {
   const resetWorkspaceDir = async () => {
     setBusy(true); setError('');
     try {
-      const result = await window.aivraDesktop?.settings.resetWorkspaceDir();
+      const result = await window.workbeeDesktop?.settings.resetWorkspaceDir();
       if (result) setWorkspaceDir(result.workspaceDir);
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setBusy(false); }
@@ -131,7 +131,7 @@ function GeneralSettings() {
     if (!confirm('确定清除所有用户自定义数据并恢复默认吗？\n\n将清除：项目与对话记录、团队角色、模型配置与 API Key、插件连接与 MCP 配置、自定义文档、本地缓存。\n\n将保留：默认团队角色、内置知识库与内置技能。\n\n此操作无法恢复。')) return;
     setBusy(true); setError('');
     try {
-      await window.aivraDesktop?.settings.reset();
+      await window.workbeeDesktop?.settings.reset();
       localDataKeys.forEach(key => localStorage.removeItem(key));
       location.reload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); setBusy(false); }

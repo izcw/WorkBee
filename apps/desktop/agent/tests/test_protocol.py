@@ -1,6 +1,6 @@
 import pytest
 
-from aivra_agent.protocol import ProtocolError, envelope, validate_request
+from workbee_agent.protocol import ProtocolError, envelope, validate_request
 
 
 def test_envelope_has_required_fields():

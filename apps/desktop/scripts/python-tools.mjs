@@ -10,7 +10,7 @@ export const venvPython = process.platform === 'win32'
   : path.join(agentRoot, '.venv', 'bin', 'python');
 
 export function findBootstrapPython() {
-  const candidates = [process.env.AIVRA_PYTHON, 'python3.12', '/opt/homebrew/bin/python3.12', 'python3.11', '/opt/homebrew/bin/python3.11', 'python3'].filter(Boolean);
+  const candidates = [process.env.WORKBEE_PYTHON, 'python3.12', '/opt/homebrew/bin/python3.12', 'python3.11', '/opt/homebrew/bin/python3.11', 'python3'].filter(Boolean);
   for (const candidate of candidates) {
     if (path.isAbsolute(candidate) && !existsSync(candidate)) continue;
     const check = spawnSync(candidate, ['-c', 'import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)'], { stdio: 'ignore' });

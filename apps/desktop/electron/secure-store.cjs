@@ -15,18 +15,18 @@ class SecureStore {
         const parsed = JSON.parse(decrypted);
         return parsed && typeof parsed === 'object' ? parsed : {};
       } catch {
-        return { aivra: decrypted };
+        return { workbee: decrypted };
       }
     } catch { return {}; }
   }
 
-  async getApiKey(roleId = 'aivra') {
-    if (roleId === 'aivra' && process.env.AIVRA_DEEPSEEK_API_KEY) return process.env.AIVRA_DEEPSEEK_API_KEY;
+  async getApiKey(roleId = 'workbee') {
+    if (roleId === 'workbee' && process.env.WORKBEE_DEEPSEEK_API_KEY) return process.env.WORKBEE_DEEPSEEK_API_KEY;
     const keys = await this._readKeys();
     return typeof keys[roleId] === 'string' ? keys[roleId] : '';
   }
 
-  async hasApiKey(roleId = 'aivra') { return Boolean(await this.getApiKey(roleId)); }
+  async hasApiKey(roleId = 'workbee') { return Boolean(await this.getApiKey(roleId)); }
 
   async setApiKey(roleId, value) {
     const key = typeof value === 'string' ? value.trim() : '';

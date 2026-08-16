@@ -2,7 +2,7 @@ import { DownloadButton } from "./DownloadButton";
 import { InteractiveDigits } from "./InteractiveDigits";
 import { NetworkGraph } from "./NetworkGraph";
 
-const downloadUrl = "https://github.com/izcw/Aivra-Agent/releases";
+const downloadUrl = "https://github.com/izcw/WorkBee-Agent/releases";
 
 const agents = [
   { name: "BeeYo", role: "全能统筹 Agent", image: "/team/logo.png", desc: "负责拆解目标、分派任务，并协调团队成员持续推进项目。", skills: ["任务拆解", "团队统筹"], knowledge: ["工作准则", "交付手册"] },
@@ -30,7 +30,7 @@ export default function Home() {
 
     <section className="product-showcase" aria-labelledby="product-showcase-title">
       <div className="hero-product-heading"><h2>你的智能工作团队</h2><p>把任务、文件、协作与执行集中在一个安静的空间里。</p></div>
-      <div className="hero-product"><img src="https://www.lumehub.duoyu.link/resource/aivra/original/7812bd86fe8d_20260712.png" alt="WorkBee Desktop 产品界面" /></div>
+      <div className="hero-product"><img src="https://www.lumehub.duoyu.link/resource/workbee/original/7812bd86fe8d_20260712.png" alt="WorkBee Desktop 产品界面" /></div>
     </section>
 
     <section className="bento-section" aria-labelledby="bento-title">
@@ -42,23 +42,23 @@ export default function Home() {
         <article className="bento-card bento-gray">
           <h3>多智能体协作</h3>
           <p>协调角色拆解目标，专家并行分析，质检 Agent 把关。</p>
-          <img src="https://www.lumehub.duoyu.link/resource/aivra/original/9e582681c124_20260806.png" alt="多智能体协作" />
+          <img src="https://www.lumehub.duoyu.link/resource/workbee/original/9e582681c124_20260806.png" alt="多智能体协作" />
         </article>
         <div className="bento-group">
           <article className="bento-card bento-dark">
             <h3>自定义模型接入</h3>
             <p>任意 OpenAI-compatible 模型，密钥仅本机加密保存。</p>
-            <img src="https://www.lumehub.duoyu.link/resource/aivra/original/2bb489720139_20260806.png" alt="模型接入配置" />
+            <img src="https://www.lumehub.duoyu.link/resource/workbee/original/2bb489720139_20260806.png" alt="模型接入配置" />
           </article>
           <article className="bento-card bento-green">
             <h3>对话即任务</h3>
             <p>对话中讨论思路，任务中执行工作，可随时停止与回溯。</p>
-            <img src="https://www.lumehub.duoyu.link/resource/aivra/original/6acbdba989f8_20260806.png" alt="对话任务交互" />
+            <img src="https://www.lumehub.duoyu.link/resource/workbee/original/6acbdba989f8_20260806.png" alt="对话任务交互" />
           </article>
           <article className="bento-card bento-blue bento-wide">
             <h3>混合检索增强</h3>
             <p>工作区文件增量索引，向量召回融合本地 FTS5，引用附带路径与行号。</p>
-            <img src="https://www.lumehub.duoyu.link/resource/aivra/original/8996e2824b67_20260806.png" alt="混合检索增强" />
+            <img src="https://www.lumehub.duoyu.link/resource/workbee/original/8996e2824b67_20260806.png" alt="混合检索增强" />
           </article>
         </div>
       </div>

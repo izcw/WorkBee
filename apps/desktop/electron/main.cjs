@@ -18,9 +18,9 @@ const isMac = process.platform === 'darwin';
 const appIcon = path.join(__dirname, 'logo.png');
 let agentManager;
 
-// 统一应用数据目录名称：旧版本为 @aivra/desktop，现改为 @workbee/desktop。
+// 统一应用数据目录名称：旧版本为 @workbee/desktop，现改为 @workbee/desktop。
 const USER_DATA_NAME = '@workbee/desktop';
-const LEGACY_USER_DATA_NAME = '@aivra/desktop';
+const LEGACY_USER_DATA_NAME = '@workbee/desktop';
 app.setName(USER_DATA_NAME);
 
 // 若旧版数据目录存在且新目录尚未创建，则将整个旧目录迁移到新位置，
@@ -238,8 +238,8 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
       path.join(userData, 'roles.json'),
       path.join(userData, 'mcp-servers.json'),
       path.join(userData, 'settings.json'),
-      path.join(userData, 'aivra-agent.pid.json'),
-      path.join(userData, 'aivra.sqlite3'),
+      path.join(userData, 'workbee-agent.pid.json'),
+      path.join(userData, 'workbee.sqlite3'),
     ];
     if (workspacePaths.length) targets.push(...workspacePaths);
     else targets.push(path.join(userData, 'projects'));
@@ -322,7 +322,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
       workspaceId: requireString(input.workspaceId, 'workspaceId', 128),
       prompt: requireString(input.prompt, 'prompt'),
       mode: input.mode === 'chat' ? 'chat' : 'task',
-      roleIds: Array.isArray(input.roleIds) ? input.roleIds.slice(0, 20).map((id, index) => requireString(id, `roleIds[${index}]`, 64)) : [requireString(input.roleId || 'aivra', 'roleId', 64)],
+      roleIds: Array.isArray(input.roleIds) ? input.roleIds.slice(0, 20).map((id, index) => requireString(id, `roleIds[${index}]`, 64)) : [requireString(input.roleId || 'workbee', 'roleId', 64)],
       approvalMode: ['request', 'auto', 'full'].includes(input.approvalMode) ? input.approvalMode : 'request',
       workflowName: typeof input.workflowName === 'string' ? input.workflowName.slice(0, 80) : '',
       documents: Array.isArray(input.documents) ? input.documents.slice(0, 100).map((item, index) => requireString(item, `documents[${index}]`, 1024)) : [],

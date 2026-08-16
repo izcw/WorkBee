@@ -54,7 +54,7 @@ function TeamSidebar() {
   };
   return <div className="team-detail">
     <header><Avatar image={roleAvatar({ id: role?.id || '', avatar })} size={72}/><h2>{creating ? '添加智能体' : role?.name}</h2><p>{creating ? '配置团队中的新角色' : role?.role}</p><StatusDot label={(role?.keyAvailable || models.find(item => item.id === modelId)?.keyAvailable) ? '模型已就绪' : '模型待配置'}/></header>
-    <div className="team-detail-actions">{editing ? <button className="primary" disabled={saving} onClick={save}>{saving ? <LoaderCircle size={14}/> : <Save size={14}/>}保存</button> : <button onClick={() => setEditing(true)}><Pencil size={14}/>编辑</button>}{role && !['aivra', 'nova', 'mira', 'sage', 'lyra'].includes(role.id) && <button className="danger" disabled={saving} onClick={remove}><Trash2 size={14}/>删除</button>}</div>
+    <div className="team-detail-actions">{editing ? <button className="primary" disabled={saving} onClick={save}>{saving ? <LoaderCircle size={14}/> : <Save size={14}/>}保存</button> : <button onClick={() => setEditing(true)}><Pencil size={14}/>编辑</button>}{role && !['workbee', 'nova', 'mira', 'sage', 'lyra'].includes(role.id) && <button className="danger" disabled={saving} onClick={remove}><Trash2 size={14}/>删除</button>}</div>
     {editing && <section className="role-identity-fields"><h3>基本信息</h3><input value={name} onChange={event => setName(event.target.value)} placeholder="角色名称"/><input value={roleTitle} onChange={event => setRoleTitle(event.target.value)} placeholder="角色职责，如：前端开发"/></section>}
     {editing && <section><h3>头像</h3><div className="avatar-picker">{DEFAULT_ROLE_AVATARS.map((image, index) => { const value = `default:${index + 1}`; return <button key={value} className={avatar === value ? 'active' : ''} onClick={() => setAvatar(value)}><img src={image} alt="默认头像"/></button>; })}<button className="avatar-upload" onClick={() => uploadRef.current?.click()}><Upload size={16}/><span>上传</span></button></div><input ref={uploadRef} className="hidden-file" type="file" accept="image/*" onChange={event => uploadAvatar(event.target.files?.[0])}/></section>}
     <section><h3>角色描述</h3>{editing ? <textarea value={description} onChange={event => setDescription(event.target.value)}/> : <p>{role?.description || '暂无描述'}</p>}</section>
@@ -68,7 +68,7 @@ function TeamSidebar() {
 
 export function TeamPage() {
   const { roles, selectedTeamRoleId, setSelectedTeamRoleId } = useAgent();
-  const select = (id: string) => { setSelectedTeamRoleId(id); window.dispatchEvent(new Event('aivra:open-right-panel')); };
+  const select = (id: string) => { setSelectedTeamRoleId(id); window.dispatchEvent(new Event('workbee:open-right-panel')); };
   return <div className="team-page"><div className="team-grid">{roles.map(role => <RoleCard key={role.id} role={role} selected={selectedTeamRoleId === role.id} onSelect={() => select(role.id)}/>)}<div onClick={() => select('__new__')}><AddCard label="添加智能体"/></div></div></div>;
 }
 TeamPage.Sidebar = TeamSidebar;

@@ -31,7 +31,7 @@ class AgentManager extends EventEmitter {
     this.startPromise = null;
     this.restartPromise = null;
     this.lastMessage = undefined;
-    this.pidFile = path.join(this.app.getPath('userData'), 'aivra-agent.pid.json');
+    this.pidFile = path.join(this.app.getPath('userData'), 'workbee-agent.pid.json');
   }
 
   getStatus() {
@@ -44,17 +44,17 @@ class AgentManager extends EventEmitter {
 
   _resolveCommand() {
     if (this.app.isPackaged) {
-      const executable = process.platform === 'win32' ? 'aivra-agent.exe' : 'aivra-agent';
-      const target = path.join(process.resourcesPath, 'agent', 'aivra-agent', executable);
+      const executable = process.platform === 'win32' ? 'workbee-agent.exe' : 'workbee-agent';
+      const target = path.join(process.resourcesPath, 'agent', 'workbee-agent', executable);
       return { command: target, args: [], cwd: path.dirname(target) };
     }
     const agentRoot = path.join(__dirname, '..', 'agent');
     const venvPython = process.platform === 'win32'
       ? path.join(agentRoot, '.venv', 'Scripts', 'python.exe')
       : path.join(agentRoot, '.venv', 'bin', 'python');
-    const candidates = [process.env.AIVRA_PYTHON, venvPython, '/opt/homebrew/bin/python3.12', '/opt/homebrew/bin/python3.11', 'python3'].filter(Boolean);
+    const candidates = [process.env.WORKBEE_PYTHON, venvPython, '/opt/homebrew/bin/python3.12', '/opt/homebrew/bin/python3.11', 'python3'].filter(Boolean);
     const command = candidates.find(candidate => !path.isAbsolute(candidate) || fs.existsSync(candidate)) || 'python3';
-    return { command, args: ['-m', 'aivra_agent'], cwd: agentRoot };
+    return { command, args: ['-m', 'workbee_agent'], cwd: agentRoot };
   }
 
   async start() {
@@ -79,13 +79,13 @@ class AgentManager extends EventEmitter {
     const env = {
       PATH: process.env.PATH || '', HOME: process.env.HOME || '', LANG: process.env.LANG || 'en_US.UTF-8',
       TMPDIR: process.env.TMPDIR || '', PYTHONUNBUFFERED: '1', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8',
-      AIVRA_DATA_DIR: this.app.getPath('userData'), AIVRA_MODEL: 'deepseek-v4-flash',
-      AIVRA_BASE_URL: 'https://api.deepseek.com', AIVRA_ROLE_PROVIDERS: JSON.stringify(providers),
-      ...(githubMcpToken ? { AIVRA_GITHUB_MCP_TOKEN: githubMcpToken } : {}),
-      ...(embeddingProvider?.apiKey ? { AIVRA_EMBEDDING_PROVIDER: JSON.stringify(embeddingProvider) } : {}),
-      ...(process.env.AIVRA_MAX_TOOL_STEPS ? { AIVRA_MAX_TOOL_STEPS: process.env.AIVRA_MAX_TOOL_STEPS } : {}),
-      ...((mcpServers.length || process.env.AIVRA_MCP_SERVERS) ? {
-        AIVRA_MCP_SERVERS: mcpServers.length ? JSON.stringify(mcpServers) : process.env.AIVRA_MCP_SERVERS,
+      WORKBEE_DATA_DIR: this.app.getPath('userData'), WORKBEE_MODEL: 'deepseek-v4-flash',
+      WORKBEE_BASE_URL: 'https://api.deepseek.com', WORKBEE_ROLE_PROVIDERS: JSON.stringify(providers),
+      ...(githubMcpToken ? { WORKBEE_GITHUB_MCP_TOKEN: githubMcpToken } : {}),
+      ...(embeddingProvider?.apiKey ? { WORKBEE_EMBEDDING_PROVIDER: JSON.stringify(embeddingProvider) } : {}),
+      ...(process.env.WORKBEE_MAX_TOOL_STEPS ? { WORKBEE_MAX_TOOL_STEPS: process.env.WORKBEE_MAX_TOOL_STEPS } : {}),
+      ...((mcpServers.length || process.env.WORKBEE_MCP_SERVERS) ? {
+        WORKBEE_MCP_SERVERS: mcpServers.length ? JSON.stringify(mcpServers) : process.env.WORKBEE_MCP_SERVERS,
       } : {}),
     };
     this.emit('status', { status: 'starting', ready: false });
