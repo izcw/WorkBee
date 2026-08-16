@@ -137,9 +137,14 @@ class RoleStore {
 
   async providersForAgent() {
     const roles = await this._read();
+    const fallbackModel = (await this.modelStore.list()).find(model => model.purpose !== 'embedding');
     const providers = {};
     for (const role of roles) {
-      const model = await this.modelStore.provider(role.modelId);
+      // Keep the Agent provider roster aligned with list(). Older role files
+      // can reference a model that the user has since deleted; the renderer
+      // already displays the first available chat model in that case.
+      const model = await this.modelStore.provider(role.modelId)
+        || (fallbackModel ? await this.modelStore.provider(fallbackModel.id) : null);
       if (model) providers[role.id] = { name: role.name, description: role.description || '', skills: role.skills || [], knowledge: role.knowledge || [], modelId: model.id, baseUrl: model.baseUrl, model: model.model, apiKey: model.apiKey };
     }
     return providers;

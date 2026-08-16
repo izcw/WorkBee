@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from workbee_agent.knowledge import KnowledgeRepository
+from workbee_agent.runtime.server import AgentServer
 from workbee_agent.storage import Database
 from workbee_agent.tools import ToolRegistry
 
@@ -13,6 +14,22 @@ class FakeEmbedder:
 
     def query(self, text):
         return [1.0, 0.0] if "水果" in text else [0.0, 1.0]
+
+
+def test_workspace_selection_does_not_start_index_before_run_creation(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("WORKBEE_DATA_DIR", str(tmp_path / "data"))
+    server = AgentServer()
+    responses = []
+    server.respond = lambda _request, message_type, payload, error=None: responses.append((message_type, payload, error))
+    server._schedule_lexical_index = lambda _workspace: (_ for _ in ()).throw(AssertionError("index started too early"))
+
+    server.handle({"id": "request-1", "type": "workspace.select", "payload": {"path": str(workspace)}})
+
+    assert responses[0][0] == "workspace.selected"
+    assert responses[0][1]["workspace"]["path"] == str(workspace)
+    server.shutdown()
 
 
 def test_workspace_knowledge_is_incremental_searchable_and_cited(tmp_path: Path):

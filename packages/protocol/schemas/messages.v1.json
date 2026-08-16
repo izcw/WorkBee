@@ -8,10 +8,10 @@
     "type": {
       "enum": [
         "runtime.hello", "runtime.ready", "runtime.health", "runtime.shutdown",
-        "workspace.select", "workspace.selected", "thread.list", "thread.get", "thread.created",
+        "workspace.select", "workspace.selected", "thread.list", "thread.get", "thread.created", "thread.truncate",
         "run.create", "run.created", "run.cancel", "run.started", "run.completed", "run.failed", "run.cancelled", "run.recoverable", "run.resume",
-        "model.delta", "tool.requested", "tool.completed", "approval.required", "approval.resolve", "settings.status",
-        "team.selecting", "team.selected", "agent.started", "agent.completed", "agent.failed", "knowledge.indexed",
+        "model.generating", "model.delta", "model.replace", "tool.requested", "tool.completed", "approval.required", "approval.resolve", "settings.status",
+        "team.selecting", "team.selected", "agent.started", "agent.completed", "agent.failed", "knowledge.indexing", "knowledge.indexed",
         "quality.started", "quality.completed", "quality.failed"
       ]
     },

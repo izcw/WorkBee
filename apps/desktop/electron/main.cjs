@@ -316,9 +316,18 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
     const response = await agentManager.requestReady('thread.get', { threadId: requireString(threadId, 'threadId', 128) });
     return response.payload.thread;
   });
+  ipcMain.handle('agent:truncate-thread', async (_event, input) => {
+    if (!input || typeof input !== 'object') throw new Error('消息编辑参数无效');
+    const response = await agentManager.requestReady('thread.truncate', {
+      threadId: requireString(input.threadId, 'threadId', 128),
+      messageId: requireString(input.messageId, 'messageId', 128),
+    });
+    return response.payload.thread;
+  });
   ipcMain.handle('agent:create-run', async (_event, input) => {
     if (!input || typeof input !== 'object') throw new Error('任务参数无效');
     const payload = {
+      clientRequestId: randomUUID(),
       workspaceId: requireString(input.workspaceId, 'workspaceId', 128),
       prompt: requireString(input.prompt, 'prompt'),
       mode: input.mode === 'chat' ? 'chat' : 'task',
@@ -328,7 +337,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
       documents: Array.isArray(input.documents) ? input.documents.slice(0, 100).map((item, index) => requireString(item, `documents[${index}]`, 1024)) : [],
     };
     if (input.threadId) payload.threadId = requireString(input.threadId, 'threadId', 128);
-    const response = await agentManager.requestReady('run.create', payload);
+    const response = await agentManager.requestReadyWithRetry('run.create', payload, 6_000);
     return response.payload;
   });
   ipcMain.handle('agent:list-recoverable-runs', async () => {

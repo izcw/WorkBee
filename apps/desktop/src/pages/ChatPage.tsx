@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Archive, ArrowDown, BookOpen, Check, ChevronRight, CircleAlert, File, FileCode2, Folder, FolderOpen, GripVertical, LoaderCircle, Minus, Pencil, Plus, RefreshCw, Save, ShieldAlert, Square, Users, Workflow, X, ExternalLink, Clock3, Trash2 } from 'lucide-react';
+import { Archive, ArrowDown, BookOpen, Check, ChevronRight, CircleAlert, Copy, File, FileCode2, Folder, FolderOpen, GripVertical, LoaderCircle, Minus, Pencil, Plus, RefreshCw, Save, ShieldAlert, Users, Workflow, X, ExternalLink, Clock3, Trash2 } from 'lucide-react';
 import { useAgent } from '../agent/AgentContext';
 import { Composer } from '../components/Composer';
 import { SettingsModal } from '../components/SettingsModal';
@@ -8,15 +8,27 @@ import { RoleCard } from '../components/RoleCard';
 import { KNOWLEDGE_DOCUMENTS } from '../data/catalog';
 import { roleAvatar } from '../data/roleAvatars';
 
-function Message({ role, content, roleId = 'workbee', createdAt, streaming = false, roles, messageRef }: { role: 'user' | 'assistant'; content: string; roleId?: string; createdAt?: string; streaming?: boolean; roles: RoleConfig[]; messageRef?: (node: HTMLDivElement | null) => void }) {
+function Message({ role, content, roleId = 'workbee', createdAt, streaming = false, streamingStatus = '', elapsedSeconds = 0, error = false, roles, editable = false, onEdit, messageRef }: { role: 'user' | 'assistant'; content: string; roleId?: string; createdAt?: string; streaming?: boolean; streamingStatus?: string; elapsedSeconds?: number; error?: boolean; roles: RoleConfig[]; editable?: boolean; onEdit?: () => void; messageRef?: (node: HTMLDivElement | null) => void }) {
+  const [copied, setCopied] = useState(false);
   const bot = role === 'assistant';
   const respondingRole = roles.find(item => item.id === roleId) || roles[0];
   const name = bot ? respondingRole?.name || 'WorkBee' : '你';
   const time = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(createdAt ? new Date(createdAt) : new Date());
-  return <div className={`message message-row ${bot ? 'team-message' : 'user-message'}`} ref={messageRef}>
+  const copyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch { setCopied(false); }
+  };
+  return <div className={`message message-row ${bot ? 'team-message' : 'user-message'} ${error ? 'message-error' : ''}`} ref={messageRef}>
     <Avatar image={bot ? roleAvatar(respondingRole) : undefined} kind={bot ? 'cat' : 'yellow'} size={30}/>
-    <div className="message-content"><header><strong>{name}</strong><small>{bot ? '回复' : '发送'} · {time}</small>{streaming && <small className="streaming-label"><LoaderCircle size={12}/>正在处理</small>}</header>
-      <Card className="message-card"><p className="message-text">{content || '正在思考…'}</p></Card>
+    <div className="message-content"><header><strong>{name}</strong><small>{bot ? '回复' : '发送'} · {time}</small>{streaming && <small className="streaming-label"><LoaderCircle size={12}/>{streamingStatus || '正在准备回复'} · {elapsedSeconds}秒</small>}</header>
+      <Card className={`message-card ${streaming && !content ? 'streaming-stage-card' : ''}`}><p className="message-text">{content || streamingStatus || '正在准备回复'}</p>{streaming && content && <i className="stream-cursor" aria-hidden="true"/>}</Card>
+      {!streaming && <div className="message-actions" aria-label="消息操作">
+        <button type="button" title="复制全部内容" aria-label="复制全部内容" onClick={copyMessage}>{copied ? <Check size={14}/> : <Copy size={14}/>}</button>
+        {editable && <button type="button" title="编辑并重新发送" aria-label="编辑并重新发送" onClick={onEdit}><Pencil size={14}/></button>}
+      </div>}
     </div>
   </div>;
 }
@@ -48,7 +60,7 @@ function readTaskRecords(key: string): TaskRecord[] {
 }
 
 export function ChatPage() {
-  const { workspace, runtime, roles, selectedRoleId, selectedRoleIds, selectRole, workflows, activeWorkflowId, setActiveWorkflow, addWorkflow, removeWorkflow, reorderWorkflows, pendingPrompt, clearPendingPrompt, draft, setDraft, messages, streaming, respondingRoleId, selectingRole, activeRun, recoverableRuns, error, approvals, mode, approvalMode, setMode, setApprovalMode, selectWorkspace, send, resumeRun, cancel } = useAgent();
+  const { workspace, runtime, roles, selectedRoleId, selectedRoleIds, selectRole, workflows, activeWorkflowId, setActiveWorkflow, addWorkflow, removeWorkflow, reorderWorkflows, pendingPrompt, clearPendingPrompt, draft, setDraft, messages, streaming, streamingStatus, respondingRoleId, selectingRole, activeRun, runStartedAt, editingMessageId, editMessage, recoverableRuns, error, approvals, mode, approvalMode, setMode, setApprovalMode, selectWorkspace, send, resumeRun, cancel } = useAgent();
   const messagesRef = useRef<HTMLDivElement>(null);
   const messageNodesRef = useRef(new Map<string, HTMLDivElement>());
   const followLatestRef = useRef(true);
@@ -60,9 +72,18 @@ export function ChatPage() {
   const [recurrence, setRecurrence] = useState('不循环');
   const [activeMessageId, setActiveMessageId] = useState('');
   const [draggedWorkflowId, setDraggedWorkflowId] = useState('');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const pendingSendingRef = useRef('');
   const scheduledRunRef = useRef(false);
   const interruptedRun = recoverableRuns.find(run => run.workspace_id === workspace?.id);
+
+  useEffect(() => {
+    if (!runStartedAt) { setElapsedSeconds(0); return; }
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - runStartedAt) / 1000)));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [runStartedAt]);
 
   useEffect(() => {
     if (!pendingPrompt || !runtime.ready || activeRun || pendingSendingRef.current === pendingPrompt) return;
@@ -108,7 +129,7 @@ export function ChatPage() {
 
   const submit = async (value: string) => {
     followLatestRef.current = true; setShowLatest(false);
-    if (mode === 'task' && (scheduleAt || recurrence !== '不循环')) {
+    if (!editingMessageId && mode === 'task' && (scheduleAt || recurrence !== '不循环')) {
       const stored = JSON.parse(localStorage.getItem('workbee.tasks.v1') || '[]');
       const repeatMs: Record<string, number> = { '每小时': 60 * 60 * 1000, '每天': 24 * 60 * 60 * 1000, '每周': 7 * 24 * 60 * 60 * 1000, '每月': 30 * 24 * 60 * 60 * 1000 };
       stored.push({ id: `task-${Date.now()}`, title: value.slice(0, 42), schedule: scheduleAt ? scheduleAt.replace('T', ' ') : '按周期执行', repeat: recurrence, runAt: scheduleAt ? new Date(scheduleAt).getTime() : Date.now() + (repeatMs[recurrence] || 0), status: 'scheduled' });
@@ -209,12 +230,12 @@ export function ChatPage() {
           : <small>该任务此前已执行过可能产生副作用的工具，为避免重复写入，WorkBee 不会自动重放。</small>}
       </Card>}
       {workspace && messages.length === 0 && !activeRun && <section className="agent-empty"><h2>准备好了</h2><p>可以试试：“先阅读 README，然后告诉我这个项目的结构和下一步建议。”</p></section>}
-      {messages.map(message => <Message key={message.id} role={message.role} roleId={message.role_id} createdAt={message.created_at} content={message.content} roles={roles} messageRef={node => {
+      {messages.map(message => <Message key={message.id} role={message.role} roleId={message.role_id} createdAt={message.created_at} content={message.content} error={message.is_error} roles={roles} editable={!activeRun && message.id === [...messages].reverse().find(item => item.role === 'user')?.id} onEdit={() => editMessage(message)} messageRef={node => {
         if (node) messageNodesRef.current.set(message.id, node);
         else messageNodesRef.current.delete(message.id);
       }}/>) }
-      {selectingRole && <div className="role-routing"><span className="routing-avatars">{roles.filter(role => selectedRoleIds.includes(role.id)).slice(0, 4).map(role => <Avatar key={role.id} image={roleAvatar(role)} size={26}/>)}</span><span><strong>正在选择合适的角色</strong><small>团队会根据当前问题和对话上下文决定由谁回答</small></span><LoaderCircle size={14}/></div>}
-      {!selectingRole && (activeRun || streaming) && <Message role="assistant" roleId={respondingRoleId} content={streaming} streaming roles={roles}/>}
+      {selectingRole && <div className="role-routing"><span className="routing-avatars">{roles.filter(role => selectedRoleIds.includes(role.id)).slice(0, 4).map(role => <Avatar key={role.id} image={roleAvatar(role)} size={26}/>)}</span><span><strong>正在选择合适的角色 · {elapsedSeconds}秒</strong><small>团队会根据当前问题和对话上下文决定由谁回答</small></span><LoaderCircle size={14}/></div>}
+      {!selectingRole && (activeRun || streaming) && <Message role="assistant" roleId={respondingRoleId} content={streaming} streaming streamingStatus={streamingStatus} elapsedSeconds={elapsedSeconds} roles={roles}/>}
       {error && <div className="run-error"><CircleAlert size={16}/><span>{error}</span></div>}
       {approvals.length > 0 && <ApprovalCards/>}
     </div>
@@ -226,9 +247,8 @@ export function ChatPage() {
     {showLatest && <button className="scroll-latest" onClick={() => scrollToLatest()}><ArrowDown size={15}/></button>}
     </section>
     <div className="chat-composer agent-composer">
-      {activeRun && <button className="cancel-run" onClick={cancel}><Square size={12}/>停止当前任务</button>}
       {mode === 'task' && <div className="task-schedule"><div className="task-schedule-switcher"><button className={!scheduleAt && recurrence === '不循环' ? 'active' : ''} onClick={() => { setScheduleAt(''); setRecurrence('不循环'); }}><Clock3 size={12}/>单次</button><button className={recurrence !== '不循环' ? 'active' : ''} onClick={() => { setScheduleAt(''); setRecurrence('每天'); }}><RefreshCw size={12}/>循环</button></div><div className="task-schedule-control">{scheduleAt || recurrence === '不循环' ? <><input type="datetime-local" value={scheduleAt} onChange={event => setScheduleAt(event.target.value)} aria-label="执行时间"/><span>执行一次</span></> : <><select value={recurrence} onChange={event => setRecurrence(event.target.value)} aria-label="循环执行"><option>每小时</option><option>每天</option><option>每周</option><option>每月</option></select><span>重复执行</span></>}</div></div>}
-      <Composer compact value={draft} onChange={setDraft} onSubmit={submit} disabled={Boolean(activeRun)} mode={mode} onModeChange={setMode}
+      <Composer compact value={draft} onChange={setDraft} onSubmit={submit} disabled={Boolean(activeRun)} running={Boolean(activeRun)} onCancel={cancel} mode={mode} onModeChange={setMode}
         roles={roles} selectedRoleId={selectedRoleId} selectedRoleIds={selectedRoleIds} onRoleChange={selectRole} approvalMode={approvalMode} onApprovalModeChange={setApprovalMode}/>
       <div className="workflow-bar">{workflows.map(flow => <div draggable key={flow.id} className={`workflow-chip ${activeWorkflowId === flow.id ? 'active' : ''} ${draggedWorkflowId === flow.id ? 'dragging' : ''}`} title={flow.description || `${flow.documents.length} 个引用文档`} onDragStart={event => { setDraggedWorkflowId(flow.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnter={event => { event.preventDefault(); if (draggedWorkflowId && draggedWorkflowId !== flow.id) reorderWorkflows(draggedWorkflowId, flow.id); }} onDragOver={event => event.preventDefault()} onDragEnd={() => setDraggedWorkflowId('')}><button className="workflow-select" onClick={() => setActiveWorkflow(flow.id)}><GripVertical size={13}/><span>{flow.name}</span></button><button className="workflow-remove" aria-label={`删除流程 ${flow.name}`} disabled={workflows.length === 1} onClick={() => { if (confirm(`确定删除流程“${flow.name}”吗？`)) removeWorkflow(flow.id); }}><X size={13}/></button></div>)}<button className="workflow-add" onClick={addWorkflow}><Plus size={15}/>添加工作流</button></div>
     </div>

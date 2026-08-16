@@ -4,7 +4,7 @@ import type { PageId } from '../types';
 import { Composer } from '../components/Composer';
 import { ModalDialog } from '../components/ModalDialog';
 import { Avatar, Card, Dropdown } from '../components/ui';
-import role1 from '../assets/images/team-avatars/role1.png';
+import { roleAvatar } from '../data/roleAvatars';
 import poster from '../assets/images/poster.jpg';
 import { useAgent } from '../agent/AgentContext';
 
@@ -78,7 +78,7 @@ function WorkspacePicker({ onNewWorkspace }: { onNewWorkspace: () => void }) {
 }
 
 export function HomePage({ onNavigate }: { onNavigate: (page: PageId) => void }) {
-  const { draft, setDraft, roles, selectedRoleId, selectedRoleIds, selectRole, createProject, approvalMode, setApprovalMode, projects, projectThreads, openProject, openThread, workspace, send } = useAgent();
+  const { draft, setDraft, roles, selectedRoleId, selectedRoleIds, selectRole, createProject, approvalMode, setApprovalMode, projects, projectThreads, projectRoleIds, openProject, openThread, workspace, send } = useAgent();
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
   const latestThreads = new Map<string, ThreadSummary>();
   projectThreads.forEach(thread => {
@@ -110,9 +110,13 @@ export function HomePage({ onNavigate }: { onNavigate: (page: PageId) => void })
       {recentProjects.map(project => {
         const latestThread = latestThreads.get(project.id);
         const activityAt = dateValue(latestThread?.updated_at) > dateValue(project.last_opened_at) ? latestThread?.updated_at : project.last_opened_at;
+        const projectRoles = (projectRoleIds[project.id] || []).map(id => roles.find(role => role.id === id)).filter((role): role is RoleConfig => Boolean(role));
         return <button className="project-click" key={project.id} title={project.path} onClick={() => openRecentProject(project).catch(() => undefined)}><Card className="project-card">
           <strong>{project.name}</strong><span className="status-chip"><Clock size={15}/>{formatRecentDate(activityAt)}</span>
-          <p>{latestThread ? `最近对话：${latestThread.title}` : '暂无对话，点击进入项目'}</p><div className="avatar-stack"><Avatar image={role1} size={30}/></div>
+          <p>{latestThread ? `最近对话：${latestThread.title}` : '暂无对话，点击进入项目'}</p><div className="avatar-stack" aria-label={`已配置角色：${projectRoles.map(role => role.name).join('、')}`}>
+            {projectRoles.slice(0, 3).map(role => <Avatar key={role.id} image={roleAvatar(role)} size={27}/>)}
+            {projectRoles.length > 3 && <strong className="avatar-stack-count" title={projectRoles.slice(3).map(role => role.name).join('、')}>+{projectRoles.length - 3}</strong>}
+          </div>
         </Card></button>;
       })}
     </div></section>

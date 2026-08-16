@@ -14,6 +14,11 @@ fs.appendFileSync(process.argv[1], process.pid + '\n');
 const lines = readline.createInterface({ input: process.stdin });
 lines.on('line', line => {
   const request = JSON.parse(line);
+  const timeoutMarker = process.argv[1] + '.timeout';
+  if (request.payload?.simulateFirstTimeout && !fs.existsSync(timeoutMarker)) {
+    fs.writeFileSync(timeoutMarker, request.id);
+    return;
+  }
   const response = {
     protocolVersion: 1, id: request.id + '-response', kind: 'response',
     type: request.type, timestamp: new Date().toISOString(), requestId: request.id,
@@ -59,4 +64,15 @@ test('startup cleanup terminates an Agent whose recorded owner no longer exists'
   await manager._cleanupStaleProcess();
   await Promise.race([exited, new Promise((_, reject) => setTimeout(() => reject(new Error('stale process did not exit')), 2000))]);
   await assert.rejects(fs.access(path.join(directory, 'workbee-agent.pid.json')));
+});
+
+test('idempotent requests retry once when the first response is lost', async t => {
+  const { manager } = await temporaryManager(t);
+  await manager.start();
+
+  const response = await manager.requestReadyWithRetry(
+    'run.create', { simulateFirstTimeout: true, clientRequestId: 'client-run-1' }, 50,
+  );
+
+  assert.equal(response.payload.accepted, true);
 });

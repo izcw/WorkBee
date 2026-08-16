@@ -10,9 +10,13 @@ test('protocol schemas are valid JSON and keep version one', async () => {
   assert.equal(envelope.properties.protocolVersion.const, 1);
   assert.ok(messages.properties.type.enum.includes('approval.resolve'));
   assert.ok(messages.properties.type.enum.includes('knowledge.indexed'));
+  assert.ok(messages.properties.type.enum.includes('knowledge.indexing'));
+  assert.ok(messages.properties.type.enum.includes('model.generating'));
+  assert.ok(messages.properties.type.enum.includes('model.replace'));
   assert.ok(messages.properties.type.enum.includes('agent.failed'));
   assert.ok(messages.properties.type.enum.includes('run.recoverable'));
   assert.ok(messages.properties.type.enum.includes('run.resume'));
+  assert.ok(messages.properties.type.enum.includes('thread.truncate'));
   assert.ok(messages.properties.type.enum.includes('quality.completed'));
   assert.equal(envelope.additionalProperties, false);
 });

@@ -137,9 +137,19 @@ class AgentManager extends EventEmitter {
     }
   }
 
-  async requestReady(type, payload = {}) {
+  async requestReady(type, payload = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
     await this.ensureReady();
-    return this.request(type, payload);
+    return this.request(type, payload, timeoutMs);
+  }
+
+  async requestReadyWithRetry(type, payload = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+    try {
+      return await this.requestReady(type, payload, timeoutMs);
+    } catch (error) {
+      if (!String(error?.message || error).includes(`Agent 请求超时：${type}`)) throw error;
+      this.emit('diagnostic', `${type} did not receive a response; retrying the idempotent request`);
+      return this.requestReady(type, payload, timeoutMs);
+    }
   }
 
   _receive(line) {

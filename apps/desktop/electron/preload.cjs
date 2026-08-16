@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('workbeeDesktop', {
     workspaceTree: workspaceId => ipcRenderer.invoke('agent:workspace-tree', workspaceId),
     usageSummary: () => ipcRenderer.invoke('agent:usage-summary'),
     getThread: threadId => ipcRenderer.invoke('agent:get-thread', threadId),
+    truncateThread: input => ipcRenderer.invoke('agent:truncate-thread', input),
     createRun: input => ipcRenderer.invoke('agent:create-run', input),
     listRecoverableRuns: () => ipcRenderer.invoke('agent:list-recoverable-runs'),
     resumeRun: runId => ipcRenderer.invoke('agent:resume-run', runId),

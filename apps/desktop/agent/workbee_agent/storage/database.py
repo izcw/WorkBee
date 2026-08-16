@@ -34,11 +34,11 @@ class Database:
                   FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
                 );
                 CREATE TABLE IF NOT EXISTS messages(
-                  id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, run_id TEXT, role TEXT NOT NULL, role_id TEXT, content TEXT NOT NULL, created_at TEXT NOT NULL,
+                  id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, run_id TEXT, role TEXT NOT NULL, role_id TEXT, content TEXT NOT NULL, is_error INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
                   FOREIGN KEY(thread_id) REFERENCES threads(id)
                 );
                 CREATE TABLE IF NOT EXISTS runs(
-                  id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, status TEXT NOT NULL, mode TEXT NOT NULL, role_id TEXT NOT NULL DEFAULT 'workbee', error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                  id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, status TEXT NOT NULL, mode TEXT NOT NULL, role_id TEXT NOT NULL DEFAULT 'workbee', client_request_id TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                   FOREIGN KEY(thread_id) REFERENCES threads(id)
                 );
                 CREATE TABLE IF NOT EXISTS approvals(
@@ -83,9 +83,17 @@ class Database:
             columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(runs)").fetchall()}
             if "role_id" not in columns:
                 self._connection.execute("ALTER TABLE runs ADD COLUMN role_id TEXT NOT NULL DEFAULT 'workbee'")
+            if "client_request_id" not in columns:
+                self._connection.execute("ALTER TABLE runs ADD COLUMN client_request_id TEXT")
+            self._connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_client_request ON runs(client_request_id) "
+                "WHERE client_request_id IS NOT NULL"
+            )
             message_columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(messages)").fetchall()}
             if "role_id" not in message_columns:
                 self._connection.execute("ALTER TABLE messages ADD COLUMN role_id TEXT")
+            if "is_error" not in message_columns:
+                self._connection.execute("ALTER TABLE messages ADD COLUMN is_error INTEGER NOT NULL DEFAULT 0")
             knowledge_columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(knowledge_chunks)").fetchall()}
             if "embedding_json" not in knowledge_columns:
                 self._connection.execute("ALTER TABLE knowledge_chunks ADD COLUMN embedding_json TEXT")
@@ -135,13 +143,14 @@ class Database:
             )
         return thread_id
 
-    def create_run(self, thread_id: str, prompt: str, mode: str, role_id: str = "workbee") -> str:
+    def create_run(self, thread_id: str, prompt: str, mode: str, role_id: str = "workbee",
+                   client_request_id: Optional[str] = None) -> str:
         run_id = str(uuid4())
         now = utc_now()
         with self._lock, self._connection:
             self._connection.execute(
-                "INSERT INTO runs(id,thread_id,status,mode,role_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-                (run_id, thread_id, "queued", mode, role_id, now, now),
+                "INSERT INTO runs(id,thread_id,status,mode,role_id,client_request_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                (run_id, thread_id, "queued", mode, role_id, client_request_id, now, now),
             )
             self._connection.execute(
                 "INSERT INTO messages(id,thread_id,run_id,role,role_id,content,created_at) VALUES(?,?,?,?,?,?,?)",
@@ -154,6 +163,13 @@ class Database:
             )
         return run_id
 
+    def get_run_by_client_request(self, client_request_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT id,thread_id,status,role_id FROM runs WHERE client_request_id=?", (client_request_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
     def set_run_status(self, run_id: str, status: str, error: Optional[str] = None) -> None:
         with self._lock, self._connection:
             self._connection.execute(
@@ -165,12 +181,13 @@ class Database:
         with self._lock, self._connection:
             self._connection.execute("UPDATE runs SET role_id = ?, updated_at = ? WHERE id = ?", (role_id, utc_now(), run_id))
 
-    def add_message(self, thread_id: str, run_id: str, role: str, content: str, role_id: Optional[str] = None) -> None:
+    def add_message(self, thread_id: str, run_id: str, role: str, content: str, role_id: Optional[str] = None,
+                    is_error: bool = False) -> None:
         now = utc_now()
         with self._lock, self._connection:
             self._connection.execute(
-                "INSERT INTO messages(id,thread_id,run_id,role,role_id,content,created_at) VALUES(?,?,?,?,?,?,?)",
-                (str(uuid4()), thread_id, run_id, role, role_id, content, now),
+                "INSERT INTO messages(id,thread_id,run_id,role,role_id,content,is_error,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                (str(uuid4()), thread_id, run_id, role, role_id, content, int(is_error), now),
             )
             self._connection.execute("UPDATE threads SET updated_at = ? WHERE id = ?", (now, thread_id))
 
@@ -456,7 +473,7 @@ class Database:
             if not thread:
                 return None
             messages = self._connection.execute(
-                "SELECT id,run_id,role,role_id,content,created_at FROM messages WHERE thread_id = ? ORDER BY created_at,id", (thread_id,)
+                "SELECT id,run_id,role,role_id,content,is_error,created_at FROM messages WHERE thread_id = ? ORDER BY created_at,id", (thread_id,)
             ).fetchall()
             runs = self._connection.execute(
                 "SELECT id,status,mode,role_id,error,created_at,updated_at FROM runs WHERE thread_id = ? ORDER BY created_at", (thread_id,)
@@ -471,11 +488,42 @@ class Database:
                 (thread_id,),
             ).fetchall()
         result = dict(thread)
-        result["messages"] = [dict(row) for row in messages]
+        result["messages"] = [{**dict(row), "is_error": bool(row["is_error"])} for row in messages]
         result["runs"] = [dict(row) for row in runs]
         result["approvals"] = [dict(row) for row in approvals]
         result["agent_tasks"] = [dict(row) for row in agent_tasks]
         return result
+
+    def truncate_thread_from_message(self, thread_id: str, message_id: str) -> Optional[Dict[str, Any]]:
+        """Remove the latest user message and everything after it before re-sending an edit."""
+        with self._lock, self._connection:
+            target = self._connection.execute(
+                "SELECT rowid,role FROM messages WHERE id=? AND thread_id=?", (message_id, thread_id)
+            ).fetchone()
+            latest_user = self._connection.execute(
+                "SELECT id FROM messages WHERE thread_id=? AND role='user' ORDER BY rowid DESC LIMIT 1", (thread_id,)
+            ).fetchone()
+            if not target or target["role"] != "user" or not latest_user or latest_user["id"] != message_id:
+                return None
+            active = self._connection.execute(
+                "SELECT 1 FROM runs WHERE thread_id=? AND status IN ('queued','running','waiting_approval')", (thread_id,)
+            ).fetchone()
+            if active:
+                raise ValueError("当前对话正在运行，无法编辑消息")
+            run_ids = [row["run_id"] for row in self._connection.execute(
+                "SELECT DISTINCT run_id FROM messages WHERE thread_id=? AND rowid>=? AND run_id IS NOT NULL",
+                (thread_id, target["rowid"]),
+            ).fetchall()]
+            if run_ids:
+                marks = ",".join("?" for _ in run_ids)
+                self._connection.execute(f"DELETE FROM approvals WHERE run_id IN ({marks})", run_ids)
+                self._connection.execute(f"DELETE FROM checkpoints WHERE run_id IN ({marks})", run_ids)
+                self._connection.execute(f"DELETE FROM token_usage WHERE run_id IN ({marks})", run_ids)
+                self._connection.execute(f"DELETE FROM agent_tasks WHERE run_id IN ({marks})", run_ids)
+                self._connection.execute(f"DELETE FROM runs WHERE id IN ({marks})", run_ids)
+            self._connection.execute("DELETE FROM messages WHERE thread_id=? AND rowid>=?", (thread_id, target["rowid"]))
+            self._connection.execute("UPDATE threads SET updated_at=? WHERE id=?", (utc_now(), thread_id))
+        return self.get_thread(thread_id)
 
     def delete_thread(self, thread_id: str) -> bool:
         with self._lock, self._connection:

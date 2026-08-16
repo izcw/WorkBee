@@ -58,7 +58,9 @@ class SingleAgentGraph:
                 self._on_delta(content)
             elif isinstance(content, list):
                 for block in content:
-                    if isinstance(block, dict) and isinstance(block.get("text"), str):
+                    if (isinstance(block, dict)
+                            and block.get("type") in (None, "text", "output_text")
+                            and isinstance(block.get("text"), str)):
                         self._on_delta(block["text"])
             complete = chunk if complete is None else complete + chunk
         if complete is None:

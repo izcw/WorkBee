@@ -43,6 +43,7 @@ interface Window {
       workspaceTree(workspaceId: string): Promise<FileTreeNode[]>;
       usageSummary(): Promise<UsageSummary>;
       getThread(threadId: string): Promise<ThreadDetail>;
+      truncateThread(input: { threadId: string; messageId: string }): Promise<ThreadDetail>;
       createRun(input: { workspaceId: string; threadId?: string; prompt: string; mode: 'chat' | 'task'; roleIds: string[]; approvalMode: 'request' | 'auto' | 'full'; workflowName?: string; documents?: string[] }): Promise<{ runId: string; threadId: string; roleIds: string[] }>;
       listRecoverableRuns(): Promise<RecoverableRun[]>;
       resumeRun(runId: string): Promise<{ runId: string; threadId: string; roleIds: string[] }>;
@@ -85,5 +86,5 @@ type ThreadSummary = {
   id: string; workspace_id: string; workspace_name: string; title: string; created_at: string; updated_at: string;
 };
 
-type ThreadMessage = { id: string; run_id?: string; role: 'user' | 'assistant'; role_id?: string; content: string; created_at: string };
+type ThreadMessage = { id: string; run_id?: string; role: 'user' | 'assistant'; role_id?: string; content: string; is_error?: boolean; created_at: string };
 type ThreadDetail = ThreadSummary & { messages: ThreadMessage[]; runs: unknown[]; approvals: unknown[] };

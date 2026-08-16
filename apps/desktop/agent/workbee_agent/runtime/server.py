@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import threading
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -240,6 +241,7 @@ class AgentServer:
 
     def serve(self) -> None:
         for raw_line in sys.stdin.buffer:
+            request: Optional[Dict[str, Any]] = None
             if self._shutdown.is_set():
                 break
             if len(raw_line) > MAX_LINE_BYTES:
@@ -257,12 +259,14 @@ class AgentServer:
                     "code": "INVALID_JSON", "message": "Invalid JSON line", "retryable": False
                 }))
             except ProtocolError as exc:
-                self.send(envelope("event", "runtime.error", {}, error={
-                    "code": exc.code, "message": exc.message, "retryable": False
-                }))
+                error = {"code": exc.code, "message": exc.message, "retryable": False}
+                if request is not None:
+                    self.respond(request, request.get("type", "runtime.error"), {}, error)
+                else:
+                    self.send(envelope("event", "runtime.error", {}, error=error))
             except Exception as exc:  # request boundary
                 print(f"request failure: {type(exc).__name__}: {exc}", file=sys.stderr)
-                if "request" in locals():
+                if request is not None:
                     self.respond(request, request.get("type", "runtime.error"), {}, {
                         "code": "INTERNAL_ERROR", "message": "Agent request failed", "retryable": False
                     })
@@ -287,7 +291,10 @@ class AgentServer:
             return True
         elif message_type == "workspace.select":
             workspace = self.database.select_workspace(Path(self._required_string(payload, "path")), str(payload.get("name") or "").strip()[:80] or None)
-            self._schedule_lexical_index(workspace)
+            # A task is commonly submitted immediately after a folder is selected.
+            # Starting a full scan here can hold the shared SQLite lock long enough
+            # for run.create to hit its IPC timeout. The run worker performs the
+            # same incremental index after task creation has been acknowledged.
             self.respond(request, "workspace.selected", {"workspace": workspace})
         elif message_type == "workspace.tree":
             workspace = self.database.get_workspace(self._required_string(payload, "workspaceId"))
@@ -318,6 +325,16 @@ class AgentServer:
         elif message_type == "thread.delete":
             thread_id = self._required_string(payload, "threadId")
             self.respond(request, "thread.delete", {"threadId": thread_id, "deleted": self.database.delete_thread(thread_id)})
+        elif message_type == "thread.truncate":
+            thread_id = self._required_string(payload, "threadId")
+            message_id = self._required_string(payload, "messageId")
+            thread = self.database.truncate_thread_from_message(thread_id, message_id)
+            if thread is None:
+                self.respond(request, "thread.truncate", {}, {
+                    "code": "MESSAGE_NOT_EDITABLE", "message": "只能编辑当前对话中的最后一条用户消息", "retryable": False,
+                })
+            else:
+                self.respond(request, "thread.truncate", {"thread": thread})
         elif message_type == "thread.get":
             thread = self.database.get_thread(self._required_string(payload, "threadId"))
             if thread is None:
@@ -355,6 +372,7 @@ class AgentServer:
     def _create_run(self, request: Dict[str, Any], payload: Dict[str, Any]) -> None:
         workspace_id = self._required_string(payload, "workspaceId")
         prompt = self._required_string(payload, "prompt")
+        client_request_id = str(payload.get("clientRequestId") or "").strip()[:128] or None
         mode = payload.get("mode", "task")
         role_ids = payload.get("roleIds", [payload.get("roleId", "workbee")])
         approval_mode = payload.get("approvalMode", "request")
@@ -370,6 +388,16 @@ class AgentServer:
         if not isinstance(documents, list) or len(documents) > 100 or any(not isinstance(item, str) or not item.strip() for item in documents):
             raise ProtocolError("INVALID_PAYLOAD", "documents must be relative workspace paths")
         role_id = role_ids[0]
+        if client_request_id:
+            existing_run = self.database.get_run_by_client_request(client_request_id)
+            if existing_run:
+                checkpoint = self.database.get_checkpoint(existing_run["id"]) or {}
+                existing_role_ids = checkpoint.get("roleIds") if isinstance(checkpoint.get("roleIds"), list) else [existing_run["role_id"]]
+                self.respond(request, "run.created", {
+                    "runId": existing_run["id"], "threadId": existing_run["thread_id"],
+                    "roleIds": existing_role_ids, "status": existing_run["status"], "deduplicated": True,
+                })
+                return
         workspace = self.database.get_workspace(workspace_id)
         if workspace is None:
             self.respond(request, "run.created", {}, {"code": "WORKSPACE_NOT_FOUND", "message": "Select a workspace first", "retryable": False})
@@ -385,7 +413,7 @@ class AgentServer:
             if existing_thread["workspace_id"] != workspace_id:
                 self.respond(request, "run.created", {}, {"code": "THREAD_WORKSPACE_MISMATCH", "message": "Thread does not belong to the selected workspace", "retryable": False})
                 return
-        run_id = self.database.create_run(thread_id, prompt, mode, role_id)
+        run_id = self.database.create_run(thread_id, prompt, mode, role_id, client_request_id)
         self.database.save_checkpoint(run_id, {
             "status": "queued", "workspaceId": workspace_id, "mode": mode, "roleIds": role_ids,
             "approvalMode": approval_mode, "workflowName": workflow_name, "documents": documents,
@@ -476,6 +504,7 @@ class AgentServer:
             emit("run.started", {"runId": run_id, "threadId": thread_id, "roleIds": role_ids})
             thread = self.database.get_thread(thread_id)
             assert thread is not None
+            context_messages = self._context_messages(thread["messages"])
             knowledge = KnowledgeRepository(
                 self.database, workspace["id"], Path(workspace["path"]), self.embedding_provider
             )
@@ -483,43 +512,51 @@ class AgentServer:
                 item for item in documents
                 if item not in BUILTIN_KNOWLEDGE and not Path(item).is_absolute() and ".." not in Path(item).parts
             ]
-            index_stats = knowledge.index(workspace_documents)
-            emit("knowledge.indexed", {
-                "workspaceId": workspace["id"], "retrievalMode": "hybrid" if self.embedding_provider else "fts5",
-                **index_stats,
-            })
 
             if len(role_ids) > 1 and not team_task:
+                selection_started_at = time.monotonic()
                 emit("team.selecting", {"roleIds": role_ids, "names": [self.providers[item]["name"] for item in role_ids]})
                 router_role_id = role_id
                 router_provider = provider
-                selector_graph = SingleAgentGraph(
-                    api_key=router_provider["apiKey"], base_url=router_provider["baseUrl"], model=router_provider["model"], tools=[],
-                    on_delta=lambda _delta: None, cancel_event=cancel, streaming=False,
-                    temperature=0, timeout=20, max_retries=0, max_tokens=24,
-                )
                 roster_order = [item for item in role_ids if item != "workbee"] + [item for item in role_ids if item == "workbee"]
-                roster, recent_dialogue = compact_role_selector_context(thread["messages"], self.providers, roster_order)
-                selector_response = selector_graph.invoke([
-                    SystemMessage(content=(
-                        "你是群聊角色路由器。根据候选角色的职责、用户最新问题以及带说话人姓名的历史对话，"
-                        "选择最适合直接回答本轮问题的一个角色。不要因为某角色刚刚回答过就默认继续选择它；"
-                        "应以本轮问题与职责的匹配度为准。候选顺序不代表优先级；当工程、产品设计、研究文档等专业角色"
-                        "与任务直接匹配时优先选择专业角色，只有任务确实需要跨领域统筹或没有专业角色匹配时才选择统筹角色。"
-                        "只输出一个 JSON 对象，格式为 {\"roleId\":\"候选角色 id\"}，不要输出解释。"
-                    )),
-                    HumanMessage(content=f"候选角色：\n{roster}\n\n当前对话：\n{recent_dialogue}"),
-                ])
-                self._record_usage(run_id, thread_id, router_role_id, router_provider, selector_response)
-                answer_role_id = select_role_from_output(selector_response.content, role_ids, self.providers)
+                roster, recent_dialogue = compact_role_selector_context(context_messages, self.providers, roster_order)
+                answer_role_id = None
+                selection_source = "model"
+                try:
+                    selector_graph = SingleAgentGraph(
+                        api_key=router_provider["apiKey"], base_url=router_provider["baseUrl"], model=router_provider["model"], tools=[],
+                        on_delta=lambda _delta: None, cancel_event=cancel, streaming=False,
+                        temperature=0, timeout=8, max_retries=0, max_tokens=32,
+                    )
+                    selector_response = selector_graph.invoke([
+                        SystemMessage(content=(
+                            "你是角色路由器。综合候选角色职责、最近对话和本轮用户真正要求交付的结果，"
+                            "选择最适合直接完成本轮任务的一个角色。必须判断主要动作与最终交付物，不能只按主题词匹配。"
+                            "例如：要求编写 HTML/CSS/JavaScript、修改代码、生成可运行文件时，主要是软件实现任务，"
+                            "即使同时提到视觉风格或产品官网，也应选择软件工程角色；只有要求设计方案、原型、体验或视觉建议"
+                            "而不要求代码交付时，才选择产品设计角色。专业角色直接匹配时优先专业角色，"
+                            "仅在跨领域统筹或没有专业角色匹配时选择统筹角色。"
+                            "只输出 {\"roleId\":\"候选角色 id\"}，不要输出分析过程或解释。"
+                        )),
+                        HumanMessage(content=f"候选角色：\n{roster}\n\n最近对话：\n{recent_dialogue}"),
+                    ])
+                    self._record_usage(run_id, thread_id, router_role_id, router_provider, selector_response)
+                    answer_role_id = select_role_from_output(selector_response.content, role_ids, self.providers)
+                except RunCancelled:
+                    raise
+                except Exception as exc:
+                    print(f"role selection degraded: {type(exc).__name__}: {str(exc)[:300]}", file=sys.stderr)
                 if answer_role_id is None:
-                    raise RuntimeError("智能角色选择未返回有效角色，请重试")
+                    answer_role_id = "workbee" if "workbee" in role_ids else role_ids[0]
+                    selection_source = "fallback"
                 role_ids = [answer_role_id]
                 role_id = answer_role_id
                 provider = self.providers[role_id]
                 self.database.set_run_role(run_id, role_id)
-                emit("team.selected", {"roleIds": role_ids, "names": [provider["name"]], "answerRoleId": role_id})
+                self._wait_for_minimum_selection_time(selection_started_at, cancel)
+                emit("team.selected", {"roleIds": role_ids, "names": [provider["name"]], "answerRoleId": role_id, "source": selection_source})
             elif team_task:
+                selection_started_at = time.monotonic()
                 candidates = [
                     item for item in role_ids if item != role_id and self.providers[item]["apiKey"]
                 ]
@@ -531,7 +568,7 @@ class AgentServer:
                 selected_specialists: List[str] = []
                 if candidates:
                     roster, recent_dialogue = compact_role_selector_context(
-                        thread["messages"], self.providers, candidates
+                        context_messages, self.providers, candidates
                     )
                     planner_graph = SingleAgentGraph(
                         api_key=provider["apiKey"], base_url=provider["baseUrl"], model=provider["model"], tools=[],
@@ -551,12 +588,23 @@ class AgentServer:
                         selected_specialists = candidates[:min(2, len(candidates))]
                 role_ids = [role_id, *selected_specialists]
                 self.database.set_run_role(run_id, role_id)
+                self._wait_for_minimum_selection_time(selection_started_at, cancel)
                 emit("team.selected", {
                     "roleIds": role_ids,
                     "names": [self.providers[item]["name"] for item in role_ids],
                     "answerRoleId": role_id,
                     "mode": "collaboration",
                 })
+
+            # Role routing does not depend on the workspace index. Select the
+            # responder first so a large incremental scan is represented as
+            # task preparation/thinking instead of a slow role-selection step.
+            emit("knowledge.indexing", {"workspaceId": workspace["id"], "documents": len(workspace_documents)})
+            index_stats = knowledge.index(workspace_documents)
+            emit("knowledge.indexed", {
+                "workspaceId": workspace["id"], "retrievalMode": "hybrid" if self.embedding_provider else "fts5",
+                **index_stats,
+            })
 
             registry = ToolRegistry(
                 Path(workspace["path"]), self.github_mcp_token, knowledge.format_results, self.mcp_servers
@@ -586,7 +634,7 @@ class AgentServer:
                     system += "当前流程引用的知识库内容：" + "\n".join(BUILTIN_KNOWLEDGE[item] for item in knowledge_documents)
                 if workspace_documents:
                     system += "本流程引用的工作区文档为：" + "、".join(workspace_documents) + "。需要内容时使用读取工具，不能假装已读。"
-            latest_prompt = str(thread["messages"][-1]["content"]) if thread["messages"] else ""
+            latest_prompt = str(context_messages[-1]["content"]) if context_messages else ""
             retrieved_context = knowledge.format_results(latest_prompt, 6)
             if not retrieved_context.startswith("未在当前工作区"):
                 system += (
@@ -598,7 +646,7 @@ class AgentServer:
                 "引用检索结果时保留其文件路径和行号，检索不到依据时明确说明。"
             )
             messages: List[Any] = [SystemMessage(content=system)]
-            for item in thread["messages"]:
+            for item in context_messages:
                 if item["role"] == "user":
                     messages.append(HumanMessage(content=item["content"]))
                 elif item["role"] == "assistant":
@@ -612,7 +660,7 @@ class AgentServer:
                         collaborator = self.providers[collaborator_id]
                         task_id = self.database.create_agent_task(
                             run_id, collaborator_id, collaborator["name"],
-                            str(thread["messages"][-1]["content"])[:4000],
+                            str(context_messages[-1]["content"])[:4000],
                         )
                         self.database.update_agent_task(task_id, "running")
                         emit("agent.started", {
@@ -652,20 +700,19 @@ class AgentServer:
                     "你是最终协调者，必须核验其结论；需要修改或运行命令时由你统一调用工具并遵守审批。\n\n"
                     + "\n\n".join(advice_items)
                 )))
-            buffered_deltas: List[str] = []
+            def stream_delta(delta: str) -> None:
+                emit("model.delta", {"delta": delta})
+
             graph = SingleAgentGraph(
                 api_key=provider["apiKey"], base_url=provider["baseUrl"], model=provider["model"],
                 tools=registry.definitions(True),
-                on_delta=(
-                    (lambda delta: buffered_deltas.append(delta))
-                    if team_task else (lambda delta: emit("model.delta", {"delta": delta}))
-                ),
+                on_delta=stream_delta,
                 cancel_event=cancel, max_tokens=4096,
             )
             for _step in range(self.max_tool_steps):
                 if cancel.is_set():
                     raise RunCancelled("Run was cancelled")
-                buffered_deltas.clear()
+                emit("model.generating", {"step": _step + 1})
                 response = graph.invoke(messages)
                 self._record_usage(run_id, thread_id, role_id, provider, response)
                 messages.append(response)
@@ -673,11 +720,13 @@ class AgentServer:
                 if not tool_calls:
                     content = response.content if isinstance(response.content, str) else json.dumps(response.content, ensure_ascii=False)
                     if team_task and specialist_ids:
+                        draft_content = content
                         content = self._quality_gate(
                             run_id, thread_id, latest_prompt, content, specialist_ids[0],
                             role_id, provider, messages, cancel, emit,
                         )
-                        emit("model.delta", {"delta": content})
+                        if content != draft_content:
+                            emit("model.replace", {"content": content})
                     self.database.add_message(thread_id, run_id, "assistant", content, role_id)
                     self.database.set_run_status(run_id, "completed")
                     emit("run.completed", {"runId": run_id, "threadId": thread_id, "content": content, "roleId": role_id, "roleName": provider["name"]})
@@ -738,8 +787,17 @@ class AgentServer:
             print(f"run {run_id} failed: {type(exc).__name__}: {safe_message}", file=sys.stderr)
             if os.environ.get("WORKBEE_DEBUG") == "1":
                 traceback.print_exc(file=sys.stderr)
+            presentation = "run-error" if self._is_request_error(exc) else "message"
+            if presentation == "message":
+                self.database.add_message(
+                    thread_id, run_id, "assistant",
+                    f"抱歉，处理这条消息时出现错误：\n{safe_message}", role_id, is_error=True,
+                )
             self.database.set_run_status(run_id, "failed", safe_message)
-            emit("run.failed", {"runId": run_id, "threadId": thread_id, "message": safe_message})
+            emit("run.failed", {
+                "runId": run_id, "threadId": thread_id, "message": safe_message,
+                "presentation": presentation, "roleId": role_id,
+            })
         finally:
             with self._state_lock:
                 self._runs.pop(run_id, None)
@@ -870,13 +928,46 @@ class AgentServer:
         ).start()
 
     @staticmethod
+    def _wait_for_minimum_selection_time(started_at: float, cancel: threading.Event,
+                                         minimum_seconds: float = 2.0) -> None:
+        remaining = minimum_seconds - (time.monotonic() - started_at)
+        if remaining > 0 and cancel.wait(remaining):
+            raise RunCancelled("Run was cancelled")
+
+    @staticmethod
+    def _context_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Keep display-only error records out of routing and model context."""
+        return [message for message in messages if not message.get("is_error")]
+
+    @staticmethod
+    def _is_request_error(exc: Exception) -> bool:
+        """Classify provider/network failures that belong in the compact run error banner."""
+        current: Optional[BaseException] = exc
+        seen: set[int] = set()
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            error_type = type(current)
+            module = error_type.__module__.lower()
+            name = error_type.__name__.lower()
+            if isinstance(current, (ConnectionError, TimeoutError)):
+                return True
+            if module.startswith(("openai", "httpx", "httpcore", "urllib3")):
+                return True
+            if any(marker in name for marker in ("connectionerror", "timeout", "apierror", "statuserror", "ratelimit")):
+                return True
+            current = current.__cause__ or current.__context__
+        return False
+
+    @staticmethod
     def _needs_approval(approval_mode: str, risk: str, approval_required: bool) -> bool:
         """Apply the product-level permission policy independently of chat/task mode."""
         if not approval_required or approval_mode == "full":
             return False
         if approval_mode == "request":
             return True
-        return approval_mode == "auto" and risk == "high"
+        if approval_mode == "auto":
+            return risk not in {"low", "medium"}
+        return True
 
     @staticmethod
     def _approval_summary(name: str, arguments: Dict[str, Any]) -> str:

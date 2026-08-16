@@ -48,6 +48,28 @@ test('models support CRUD and roles reference a configured model', async t => {
   assert.equal((await reloadedRoles.providersForAgent())[added.id].description, '负责内容编辑。');
 });
 
+test('Agent providers use the same fallback model shown for stale role references', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workbee-stale-role-model-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const keys = new Map();
+  const secureStore = {
+    getApiKey: async id => keys.get(id) || '',
+    setApiKey: async (id, value) => value ? keys.set(id, value) : keys.delete(id),
+  };
+  const app = { getPath: () => directory };
+  const models = new ModelStore(app, secureStore);
+  await models.clear();
+  const current = await models.create({ name: 'Current', baseUrl: 'https://example.com/v1', model: 'current-model', apiKey: 'current-key' });
+  const roles = new RoleStore(app, models);
+
+  const visibleRoles = await roles.list();
+  const providers = await roles.providersForAgent();
+
+  assert.ok(visibleRoles.every(role => role.modelId === current.id));
+  assert.deepEqual(Object.keys(providers), ['workbee', 'nova', 'mira', 'sage', 'lyra']);
+  assert.ok(Object.values(providers).every(provider => provider.modelId === current.id && provider.apiKey === 'current-key'));
+});
+
 test('legacy team data is reset once to the five default roles', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workbee-role-migration-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));

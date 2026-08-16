@@ -24,6 +24,39 @@ def test_thread_history_survives_database_reopen(tmp_path: Path):
     reopened.close()
 
 
+def test_display_only_error_message_is_persisted_with_its_role(tmp_path: Path):
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir()
+    database = Database(tmp_path / "error-message.sqlite3")
+    workspace = database.select_workspace(workspace_path)
+    thread_id = database.create_thread(workspace["id"], "执行任务")
+    run_id = database.create_run(thread_id, "执行任务", "task", "nova")
+    database.add_message(thread_id, run_id, "assistant", "处理任务时出现错误", "nova", is_error=True)
+    database.set_run_status(run_id, "failed", "内部执行错误")
+    database.close()
+
+    reopened = Database(tmp_path / "error-message.sqlite3")
+    error_message = reopened.get_thread(thread_id)["messages"][-1]
+    assert error_message["role"] == "assistant"
+    assert error_message["role_id"] == "nova"
+    assert error_message["is_error"] is True
+    reopened.close()
+
+
+def test_run_client_request_id_is_persisted_for_idempotent_retry(tmp_path: Path):
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir()
+    database = Database(tmp_path / "idempotent-run.sqlite3")
+    workspace = database.select_workspace(workspace_path)
+    thread_id = database.create_thread(workspace["id"], "创建官网")
+
+    run_id = database.create_run(thread_id, "创建官网", "chat", "nova", "client-request-1")
+    existing = database.get_run_by_client_request("client-request-1")
+
+    assert existing == {"id": run_id, "thread_id": thread_id, "status": "queued", "role_id": "nova"}
+    database.close()
+
+
 def test_new_conversation_has_independent_history_in_same_workspace(tmp_path: Path):
     workspace_path = tmp_path / "workspace"
     workspace_path.mkdir()
@@ -39,6 +72,38 @@ def test_new_conversation_has_independent_history_in_same_workspace(tmp_path: Pa
     assert first_thread != second_thread
     assert [item["content"] for item in database.get_thread(second_thread)["messages"]] == ["新的独立对话"]
     assert len(database.list_threads(workspace["id"])) == 2
+    database.close()
+
+
+def test_editing_latest_user_message_removes_it_and_all_later_run_data(tmp_path: Path):
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir()
+    database = Database(tmp_path / "edit-message.sqlite3")
+    workspace = database.select_workspace(workspace_path)
+    thread_id = database.create_thread(workspace["id"], "第一条")
+    first_run = database.create_run(thread_id, "第一条", "chat")
+    database.add_message(thread_id, first_run, "assistant", "第一条回复", "workbee")
+    database.set_run_status(first_run, "completed")
+    second_run = database.create_run(thread_id, "第二条", "chat")
+    database.add_message(thread_id, second_run, "assistant", "第二条回复", "workbee")
+    database.create_approval(second_run, "write_file", {"path": "result.txt"})
+    database.save_checkpoint(second_run, {"status": "completed"})
+    database.record_token_usage(second_run, thread_id, "workbee", "deepseek", "deepseek-v4", 8, 2, 10)
+    database.create_agent_task(second_run, "workbee", "BeeYo", "完成第二条")
+    database.set_run_status(second_run, "completed")
+
+    before = database.get_thread(thread_id)
+    first_user_id = before["messages"][0]["id"]
+    second_user_id = before["messages"][2]["id"]
+    assert database.truncate_thread_from_message(thread_id, first_user_id) is None
+
+    truncated = database.truncate_thread_from_message(thread_id, second_user_id)
+    assert [message["content"] for message in truncated["messages"]] == ["第一条", "第一条回复"]
+    assert [run["id"] for run in truncated["runs"]] == [first_run]
+    assert truncated["approvals"] == []
+    assert truncated["agent_tasks"] == []
+    assert database.get_checkpoint(second_run) is None
+    assert database.usage_summary()["totalTokens"] == 0
     database.close()
 
 
