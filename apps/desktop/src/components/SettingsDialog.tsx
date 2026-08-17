@@ -102,12 +102,13 @@ const localDataKeys = ['workbee.workflows.v5', 'workbee.workflows.v4', 'workbee.
 function GeneralSettings() {
   const [workspaceDir, setWorkspaceDir] = useState('');
   const [defaultWorkspaceDir, setDefaultWorkspaceDir] = useState('');
+  const [executionMode, setExecutionMode] = useState<AppSettings['executionMode']>('local-dev');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     window.workbeeDesktop?.settings.get()
-      .then(settings => { setWorkspaceDir(settings.workspaceDir); setDefaultWorkspaceDir(settings.defaultWorkspaceDir); })
+      .then(settings => { setWorkspaceDir(settings.workspaceDir); setDefaultWorkspaceDir(settings.defaultWorkspaceDir); setExecutionMode(settings.executionMode); })
       .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)));
   }, []);
 
@@ -116,6 +117,15 @@ function GeneralSettings() {
     try {
       const selected = await window.workbeeDesktop?.settings.selectWorkspaceDir();
       if (selected) setWorkspaceDir(selected.workspaceDir);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setBusy(false); }
+  };
+  const changeExecutionMode = async (mode: AppSettings['executionMode']) => {
+    if (mode === 'full-access' && !confirm('完全访问模式会取消 Agent 命令沙箱，确定启用吗？')) return;
+    setBusy(true); setError('');
+    try {
+      const result = await window.workbeeDesktop?.settings.setExecutionMode(mode);
+      if (result) setExecutionMode(result.executionMode);
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setBusy(false); }
   };
@@ -148,6 +158,13 @@ function GeneralSettings() {
         <button onClick={resetWorkspaceDir} disabled={busy}><RotateCcw size={14}/>恢复默认</button>
       </div>
       {error && <p className="model-error">{error}</p>}
+    </div>
+    <div className="settings-card">
+      <header><div><h3>Agent 执行权限</h3><p>按整体模式控制文件、命令、进程和本地服务权限，切换后 Agent 会自动重启。</p></div></header>
+      <div className="path-row"><select value={executionMode} onChange={event => changeExecutionMode(event.target.value as AppSettings['executionMode'])} disabled={busy} aria-label="Agent 执行权限">
+        <option value="workspace-safe">工作区安全</option><option value="local-dev">本地开发</option><option value="full-access">完全访问</option>
+      </select></div>
+      <p className="privacy-note">{executionMode === 'workspace-safe' ? '仅允许工作区读写和无网络命令。' : executionMode === 'local-dev' ? '允许构建、测试和 localhost 开发服务，仍限制外网与项目外路径。' : '命令在无沙箱环境执行，请只在可信项目中使用。'}</p>
     </div>
     <div className="settings-card danger">
       <header><div><h3>清除软件数据</h3><p>清除项目、对话、团队角色、模型、插件、文档等用户自定义内容，恢复初始默认状态。</p></div></header>

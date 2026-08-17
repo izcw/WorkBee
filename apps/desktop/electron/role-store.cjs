@@ -2,35 +2,40 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-const ROLE_STORE_VERSION = 5;
+const ROLE_STORE_VERSION = 6;
 const DEFAULT_ROLES = [
   {
     id: 'workbee', name: 'BeeYo', role: '全能统筹 Agent', modelId: 'deepseek-default', avatar: 'builtin:workbee',
     description: '负责全盘统筹、需求澄清、任务规划和落地交付。能够在授权工作区内主动读取、创建和修改文件，协调专业角色完成开发、设计、办公、研究和结果复核。',
+    acceptanceResponsibility: '验收整体目标、关键决议、责任人和交付物是否闭环；确认事实依据充分、风险已披露，并汇总最终交付。',
     skills: ['全局规划与执行', '文件读写与整理', '软件开发与测试', '产品与设计协作', '文档与办公处理', '研究与数据分析'],
     knowledge: ['workbee-working-principles', 'planning-delivery-playbook'],
   },
   {
     id: 'nova', name: 'Codeo', role: '软件工程 Agent', modelId: 'deepseek-default', avatar: 'default:2',
     description: '负责理解代码库、设计技术方案、实现功能、修复缺陷并完成测试和构建验证，同时保护既有架构与用户改动。',
+    acceptanceResponsibility: '验收实现是否符合技术方案、接口和既有架构；执行必要的测试、构建或运行验证，并记录未解决的技术风险。',
     skills: ['文件读写与整理', '软件开发与测试', '全局规划与执行'],
     knowledge: ['software-delivery-baseline', 'engineering-practice-guide'],
   },
   {
     id: 'mira', name: 'Viso', role: '产品设计 Agent', modelId: 'deepseek-default', avatar: 'default:3',
     description: '负责产品需求、用户流程、信息架构、交互状态、界面文案和设计评审，输出能够实现与验收的产品设计方案。',
+    acceptanceResponsibility: '验收需求覆盖、用户流程、交互状态和文案是否一致；核对方案是否可实现、可测试，并标出体验与产品风险。',
     skills: ['产品与设计协作', '文档与办公处理', '全局规划与执行'],
     knowledge: ['product-design-guidelines', 'ux-design-system-guide'],
   },
   {
     id: 'sage', name: 'Lexo', role: '研究文档 Agent', modelId: 'deepseek-default', avatar: 'default:4',
     description: '负责读取和整理项目文件、资料研究、数据归纳、专业文档与报告撰写，核验证据边界并提炼可执行结论。',
+    acceptanceResponsibility: '验收资料来源、数据口径、引用路径和结论是否可追溯；检查文档结构、事实边界与待确认项，避免把推断写成事实。',
     skills: ['文件读写与整理', '研究与数据分析', '文档与办公处理'],
     knowledge: ['research-evidence-playbook', 'document-quality-guide'],
   },
   {
     id: 'lyra', name: 'Buzzo', role: '运营内容 Agent', modelId: 'deepseek-default', avatar: 'default:5',
     description: '负责日常办公、内容策划、运营沟通与项目推进。能够把零散需求整理为计划、文案、清单和复盘，并结合用户、市场与项目资料给出清晰、可执行的建议。',
+    acceptanceResponsibility: '验收内容是否符合目标受众、沟通口径、时间节点和执行清单；确认关键事项有负责人、有截止时间、有反馈或复盘结果。',
     skills: ['全局规划与执行', '文档与办公处理', '研究与数据分析', '产品与设计协作'],
     knowledge: ['operations-content-playbook', 'communication-campaign-guide'],
   },
@@ -53,6 +58,11 @@ class RoleStore {
     try {
       const value = JSON.parse(await fs.readFile(this.path, 'utf8'));
       if (value?.version === ROLE_STORE_VERSION && Array.isArray(value.roles)) return this._mergeWithDefaults(value.roles);
+      if (value?.version === 5) {
+        const migrated = this._mergeWithDefaults(Array.isArray(value.roles) ? value.roles : [], true);
+        await this._write(migrated);
+        return migrated;
+      }
       if (value?.version === 3 || value?.version === 4) {
         if (!Array.isArray(value.roles)) return DEFAULT_ROLES.map(role => ({ ...role }));
         const migrated = this._mergeWithDefaults(value.roles, true);
@@ -88,8 +98,11 @@ class RoleStore {
       const saved = roles.find(item => item?.id === fallback.id) || {};
       const knowledge = addDefaultKnowledge && Array.isArray(saved.knowledge)
         ? Array.from(new Set([...fallback.knowledge, ...saved.knowledge])) : saved.knowledge;
-      return { ...fallback, ...saved, ...(knowledge ? { knowledge } : {}), modelId: saved.modelId || fallback.modelId };
-    }).concat(roles.filter(item => item?.id && !DEFAULT_ROLE_IDS.has(item.id)));
+      return { ...fallback, ...saved, acceptanceResponsibility: saved.acceptanceResponsibility || fallback.acceptanceResponsibility, ...(knowledge ? { knowledge } : {}), modelId: saved.modelId || fallback.modelId };
+    }).concat(roles.filter(item => item?.id && !DEFAULT_ROLE_IDS.has(item.id)).map(item => ({
+      ...item,
+      acceptanceResponsibility: item.acceptanceResponsibility || '验收本角色负责的交付物是否符合任务目标、质量标准和截止要求，并记录未完成项。',
+    })));
   }
 
   async list() {
@@ -115,10 +128,12 @@ class RoleStore {
     const role = String(input.role ?? existing?.role ?? '').trim().slice(0, 80);
     if (!name || !role) throw new Error('请填写角色名称和职责');
     const description = input.description === undefined ? existing?.description || '' : String(input.description).trim().slice(0, 2000);
+    const acceptanceResponsibility = input.acceptanceResponsibility === undefined ? existing?.acceptanceResponsibility || '' : String(input.acceptanceResponsibility).trim().slice(0, 2000);
+    if (!acceptanceResponsibility) throw new Error('请填写验收职责');
     const skills = input.skills === undefined ? existing?.skills || [] : Array.from(new Set((Array.isArray(input.skills) ? input.skills : []).map(String).map(item => item.trim()).filter(Boolean))).slice(0, 30);
     const knowledge = input.knowledge === undefined ? existing?.knowledge || [] : Array.from(new Set((Array.isArray(input.knowledge) ? input.knowledge : []).map(String).map(item => item.trim()).filter(Boolean))).slice(0, 30);
     const avatar = input.avatar === undefined ? existing?.avatar : String(input.avatar).slice(0, 2_500_000);
-    const savedRole = { ...(existing || {}), id, name, role, modelId, description, skills, knowledge, ...(avatar ? { avatar } : {}) };
+    const savedRole = { ...(existing || {}), id, name, role, modelId, description, acceptanceResponsibility, skills, knowledge, ...(avatar ? { avatar } : {}) };
     if (index < 0) { roles.push(savedRole); index = roles.length - 1; } else roles[index] = savedRole;
     await this._write(roles);
     return (await this.list()).find(role => role.id === id);

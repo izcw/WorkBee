@@ -13,16 +13,18 @@ class SettingsStore {
       if (value && typeof value === 'object') {
         return {
           workspaceDir: typeof value.workspaceDir === 'string' ? value.workspaceDir.trim() : '',
+          executionMode: ['workspace-safe', 'local-dev', 'full-access'].includes(value.executionMode) ? value.executionMode : 'local-dev',
         };
       }
     } catch {}
-    return { workspaceDir: '' };
+    return { workspaceDir: '', executionMode: 'local-dev' };
   }
 
   async set(patch) {
     const current = await this.get();
     const next = { ...current };
     if (patch && typeof patch.workspaceDir === 'string') next.workspaceDir = patch.workspaceDir.trim();
+    if (patch && ['workspace-safe', 'local-dev', 'full-access'].includes(patch.executionMode)) next.executionMode = patch.executionMode;
     await fs.mkdir(path.dirname(this.path), { recursive: true });
     await fs.writeFile(this.path, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
     return next;

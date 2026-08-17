@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Box, ChevronDown, ChevronRight, FileText, Folder, LogOut, MessageSquare, Minus, MoreHorizontal, PanelBottom, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Pencil, Plus, PlusSquare, Settings, Square, Terminal, ToolCase, Trash2, Users, X } from 'lucide-react';
+import { Box, ChevronDown, ChevronRight, FileText, Folder, LoaderCircle, LogOut, MessageSquare, Minus, MoreHorizontal, PanelBottom, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Pencil, Plus, PlusSquare, Settings, Square, Terminal, ToolCase, Trash2, Users, X } from 'lucide-react';
 import type { PageId } from '../types';
 import { Avatar, SearchInput } from './ui';
 import { SettingsDialog } from './SettingsDialog';
@@ -52,7 +52,7 @@ function RenameProjectDialog({ project, close }: { project: Workspace; close: ()
 }
 
 export function Sidebar({ page, onNavigate, openSettings }: { page: PageId; onNavigate: (page: PageId) => void; openSettings: () => void }) {
-  const { workspace, projects, projectThreads, threadId, startNewConversation, openProject, newProjectThread, deleteProject, deleteThread, openThread } = useAgent();
+  const { workspace, projects, projectThreads, threadId, runningThreadIds, startNewConversation, openProject, newProjectThread, deleteProject, deleteThread, openThread } = useAgent();
   const [profileOpen, setProfileOpen] = useState(false);
   const [openTreeMenu, setOpenTreeMenu] = useState('');
   const [editingProject, setEditingProject] = useState<Workspace | null>(null);
@@ -108,7 +108,7 @@ export function Sidebar({ page, onNavigate, openSettings }: { page: PageId; onNa
               <button className={`thread-open-button ${thread.id === threadId ? 'active' : ''}`} title={thread.title} onClick={() => {
                 const activate = active ? Promise.resolve() : openProject(project.id);
                 activate.then(() => openThread(thread.id)).then(() => onNavigate('chat')).catch(() => undefined);
-              }}><MessageSquare size={13}/><span>{thread.title}</span></button>
+              }}>{runningThreadIds.includes(thread.id) ? <LoaderCircle className="thread-running-icon" size={13}/> : <MessageSquare size={13}/>}<span>{thread.title}</span></button>
               <div className="tree-action thread-action" onMouseDown={event => event.stopPropagation()}>
                 <button className="thread-menu-button" title="对话操作" aria-label={`${thread.title} 对话操作`} onClick={() => setOpenTreeMenu(value => value === `thread:${thread.id}` ? '' : `thread:${thread.id}`)}><MoreHorizontal size={14}/></button>
                 {openTreeMenu === `thread:${thread.id}` && <div className="tree-action-menu" role="menu"><button className="danger" role="menuitem" onClick={() => {

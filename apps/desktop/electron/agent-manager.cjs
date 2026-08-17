@@ -16,13 +16,14 @@ function now() { return new Date().toISOString(); }
 function id() { return crypto.randomUUID(); }
 
 class AgentManager extends EventEmitter {
-  constructor({ app, getProviderConfigs, getGithubMcpToken, getEmbeddingProvider, getMcpServers }) {
+  constructor({ app, getProviderConfigs, getGithubMcpToken, getEmbeddingProvider, getMcpServers, getExecutionMode }) {
     super();
     this.app = app;
     this.getProviderConfigs = getProviderConfigs;
     this.getGithubMcpToken = typeof getGithubMcpToken === 'function' ? getGithubMcpToken : async () => '';
     this.getEmbeddingProvider = typeof getEmbeddingProvider === 'function' ? getEmbeddingProvider : async () => null;
     this.getMcpServers = typeof getMcpServers === 'function' ? getMcpServers : async () => [];
+    this.getExecutionMode = typeof getExecutionMode === 'function' ? getExecutionMode : async () => 'local-dev';
     this.child = null;
     this.ready = false;
     this.stopping = false;
@@ -76,11 +77,13 @@ class AgentManager extends EventEmitter {
     const githubMcpToken = await this.getGithubMcpToken();
     const embeddingProvider = await this.getEmbeddingProvider();
     const mcpServers = await this.getMcpServers();
+    const executionMode = await this.getExecutionMode();
     const env = {
       PATH: process.env.PATH || '', HOME: process.env.HOME || '', LANG: process.env.LANG || 'en_US.UTF-8',
       TMPDIR: process.env.TMPDIR || '', PYTHONUNBUFFERED: '1', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8',
       WORKBEE_DATA_DIR: this.app.getPath('userData'), WORKBEE_MODEL: 'deepseek-v4-flash',
       WORKBEE_BASE_URL: 'https://api.deepseek.com', WORKBEE_ROLE_PROVIDERS: JSON.stringify(providers),
+      WORKBEE_EXECUTION_MODE: executionMode,
       ...(githubMcpToken ? { WORKBEE_GITHUB_MCP_TOKEN: githubMcpToken } : {}),
       ...(embeddingProvider?.apiKey ? { WORKBEE_EMBEDDING_PROVIDER: JSON.stringify(embeddingProvider) } : {}),
       ...(process.env.WORKBEE_MAX_TOOL_STEPS ? { WORKBEE_MAX_TOOL_STEPS: process.env.WORKBEE_MAX_TOOL_STEPS } : {}),

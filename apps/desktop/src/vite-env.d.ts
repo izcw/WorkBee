@@ -16,11 +16,11 @@ type Workspace = { id: string; path: string; name: string; created_at?: string; 
 type FileTreeNode = { name: string; path: string; type: 'file' | 'directory'; children?: FileTreeNode[] };
 type UsageSummary = { totalTokens: number; peakTokens: number; longestTaskSeconds: number; byModel: Array<{ model_id: string; model: string; input_tokens: number; output_tokens: number; total_tokens: number; conversations: number }>; daily: Array<{ date: string; tokens: number; conversations: number }> };
 type ModelConfig = { id: string; name: string; baseUrl: string; model: string; purpose: 'chat' | 'embedding'; keyAvailable: boolean; maskedKey: string };
-type RoleConfig = { id: string; name: string; role: string; avatar?: string; modelId: string; modelName: string; baseUrl: string; model: string; keyAvailable: boolean; description: string; skills: string[]; knowledge: string[] };
+type RoleConfig = { id: string; name: string; role: string; avatar?: string; modelId: string; modelName: string; baseUrl: string; model: string; keyAvailable: boolean; description: string; acceptanceResponsibility: string; skills: string[]; knowledge: string[] };
 type ModelInput = { id?: string; name: string; baseUrl: string; model: string; purpose?: 'chat' | 'embedding'; apiKey?: string; clearApiKey?: boolean };
 type RecoverableRun = { id: string; thread_id: string; workspace_id: string; role_id: string; mode: 'chat' | 'task'; title: string; updated_at: string; safeToResume: boolean; phase: string };
 type McpServerConfig = { id: string; name: string; url: string; enabled: boolean; tokenAvailable: boolean };
-type AppSettings = { workspaceDir: string; defaultWorkspaceDir: string };
+type AppSettings = { workspaceDir: string; defaultWorkspaceDir: string; executionMode: 'workspace-safe' | 'local-dev' | 'full-access' };
 
 interface Window {
   workbeeDesktop?: {
@@ -61,11 +61,12 @@ interface Window {
     };
     roles: {
       list(): Promise<RoleConfig[]>;
-      save(input: { id?: string; name?: string; role?: string; avatar?: string; modelId: string; description?: string; skills?: string[]; knowledge?: string[] }): Promise<RoleConfig>;
+      save(input: { id?: string; name?: string; role?: string; avatar?: string; modelId: string; description?: string; acceptanceResponsibility?: string; skills?: string[]; knowledge?: string[] }): Promise<RoleConfig>;
       delete(roleId: string): Promise<{ deleted: boolean }>;
     };
     settings: {
-      get(): Promise<AppSettings>;
+    get(): Promise<AppSettings>;
+    setExecutionMode(mode: AppSettings['executionMode']): Promise<{ executionMode: AppSettings['executionMode'] }>;
       selectWorkspaceDir(): Promise<{ workspaceDir: string } | null>;
       resetWorkspaceDir(): Promise<{ workspaceDir: string }>;
       reset(): Promise<{ cleared: boolean }>;

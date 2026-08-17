@@ -137,6 +137,7 @@ def compact_role_selector_context(thread_messages: List[Dict[str, Any]], provide
             item,
             str(providers[item].get("name") or item)[:60],
             str(providers[item].get("description") or "")[:180],
+            f"验收：{str(providers[item].get('acceptanceResponsibility') or '')[:180]}",
             ", ".join(providers[item].get("skills", [])[:8])[:160],
         )))
         for item in role_ids
@@ -174,7 +175,13 @@ class AgentServer:
         self.github_mcp_token = os.environ.get("WORKBEE_GITHUB_MCP_TOKEN", "")
         self.mcp_servers = self._load_mcp_servers()
         self.embedding_provider = EmbeddingProvider.from_environment(os.environ.get("WORKBEE_EMBEDDING_PROVIDER", ""))
-        self.max_tool_steps = self._int_env("WORKBEE_MAX_TOOL_STEPS", 12, 4, 100)
+        self.execution_mode = os.environ.get("WORKBEE_EXECUTION_MODE", "local-dev")
+        if self.execution_mode not in {"workspace-safe", "local-dev", "full-access"}:
+            self.execution_mode = "local-dev"
+        # This is the initial budget for one run. The execution loop can extend
+        # it when the model is still making progress, up to the hard safety cap.
+        self.max_tool_steps = self._int_env("WORKBEE_MAX_TOOL_STEPS", 20, 4, 100)
+        self.max_total_tool_steps = 100
         self._write_lock = threading.Lock()
         self._shutdown = threading.Event()
         self._runs: Dict[str, threading.Event] = {}
@@ -204,7 +211,7 @@ class AgentServer:
             return []
 
     def _load_providers(self) -> Dict[str, Dict[str, Any]]:
-        fallback = {"workbee": {"name": "BeeYo", "description": "默认 Agent", "skills": [], "knowledge": [], "apiKey": self.api_key, "modelId": self.model, "model": self.model, "baseUrl": self.base_url}}
+        fallback = {"workbee": {"name": "BeeYo", "description": "默认 Agent", "acceptanceResponsibility": "验收整体目标、责任人和交付物是否闭环。", "skills": [], "knowledge": [], "apiKey": self.api_key, "modelId": self.model, "model": self.model, "baseUrl": self.base_url}}
         try:
             value = json.loads(os.environ.get("WORKBEE_ROLE_PROVIDERS", ""))
             if not isinstance(value, dict):
@@ -216,6 +223,7 @@ class AgentServer:
                 providers[role_id] = {
                     "name": str(provider.get("name") or role_id), "apiKey": str(provider.get("apiKey") or ""),
                     "description": str(provider.get("description") or ""),
+                    "acceptanceResponsibility": str(provider.get("acceptanceResponsibility") or ""),
                     "skills": [str(item) for item in provider.get("skills", []) if isinstance(item, str)][:30],
                     "knowledge": [str(item) for item in provider.get("knowledge", []) if isinstance(item, str)][:30],
                     "modelId": str(provider.get("modelId") or provider.get("model") or role_id),
@@ -607,18 +615,28 @@ class AgentServer:
             })
 
             registry = ToolRegistry(
-                Path(workspace["path"]), self.github_mcp_token, knowledge.format_results, self.mcp_servers
+                Path(workspace["path"]), self.github_mcp_token, knowledge.format_results, self.mcp_servers,
+                execution_mode=self.execution_mode,
             )
             team_names = "、".join(self.providers[item]["name"] for item in role_ids)
             knowledge_refs = provider.get("knowledge", [])
             knowledge_guidance = "\n".join(BUILTIN_KNOWLEDGE.get(item, f"知识库引用：{item}") for item in knowledge_refs)
+            execution_guidance = {
+                "workspace-safe": "命令无网络访问，文件读写仅限当前工作区。",
+                "local-dev": "命令可访问 localhost 进行本地开发服务，但文件读写仍限当前工作区，禁止外网访问。",
+                "full-access": "当前为完全访问模式，可访问工作区外路径和网络；只执行用户明确要求的操作。",
+            }[self.execution_mode]
             system = (
-                f"你是 {provider['name']}。角色描述：{provider.get('description', '')}。已启用技能：{'、'.join(provider.get('skills', [])) or '通用能力'}。"
+                f"你是 {provider['name']}。角色描述：{provider.get('description', '')}。你的验收职责：{provider.get('acceptanceResponsibility', '') or '检查本角色交付是否符合任务目标、事实依据和可执行标准'}。已启用技能：{'、'.join(provider.get('skills', [])) or '通用能力'}。"
                 f"内置知识与引用：{knowledge_guidance or '无'}。"
                 f"当前参与任务的 WorkBee 团队成员为：{team_names}。用中文简洁回答。"
                 f"当前且唯一授权工作区是 {workspace['name']}。不得访问或操作该文件夹之外的任何路径。读取上下文时主动使用工具。"
                 "不得声称执行过未调用的工具。你可以使用系统实际提供的读写与命令工具；是否需要用户批准由运行时按当前审批模式和风险等级决定，不要自行要求用户用文字确认。"
-                "命令工具不经过 Shell，网络被禁用，写入仅限当前工作区。"
+                f"当前执行权限模式为 {self.execution_mode}。命令工具不经过 Shell。{execution_guidance}"
+                "需要启动本地开发服务器时，使用 start_dev_server；它会请求批准、后台绑定 localhost 并返回 PID，"
+                "不要用 run_command 启动不会退出的服务器进程。"
+                f"本轮工具调用初始预算为 {self.max_tool_steps} 轮。接近预算时，运行时会提醒你判断任务是否已完成；"
+                "如果任务尚未完成，请继续调用必要工具推进，不要重复已经成功的操作；如果已经完成，直接给出最终回复。"
             )
             if self.github_mcp_token:
                 system += "已连接 GitHub MCP。名称以 github_ 开头的工具会访问 GitHub；优先使用只读工具，涉及创建、修改或删除 GitHub 资源时必须等待运行时审批。若用户使用 @github，优先调用 GitHub MCP 工具完成请求。"
@@ -709,10 +727,19 @@ class AgentServer:
                 on_delta=stream_delta,
                 cancel_event=cancel, max_tokens=4096,
             )
-            for _step in range(self.max_tool_steps):
+            tool_step = 0
+            current_limit = self.max_tool_steps
+            while tool_step < current_limit:
                 if cancel.is_set():
                     raise RunCancelled("Run was cancelled")
-                emit("model.generating", {"step": _step + 1})
+                remaining = current_limit - tool_step
+                if remaining <= 3:
+                    messages.append(SystemMessage(content=(
+                        f"运行时提示：当前工具预算还剩 {remaining} 轮。请自行判断任务是否已经完成；"
+                        "如果未完成，优先完成核心修改和一次关键验证，并继续调用必要工具；"
+                        "不要重新扫描项目或重复执行相同操作。"
+                    )))
+                emit("model.generating", {"step": tool_step + 1, "budget": current_limit})
                 response = graph.invoke(messages)
                 self._record_usage(run_id, thread_id, role_id, provider, response)
                 messages.append(response)
@@ -731,6 +758,7 @@ class AgentServer:
                     self.database.set_run_status(run_id, "completed")
                     emit("run.completed", {"runId": run_id, "threadId": thread_id, "content": content, "roleId": role_id, "roleName": provider["name"]})
                     return
+                step_progress = False
                 for call in tool_calls:
                     name = call.get("name", "")
                     arguments = call.get("args", {})
@@ -770,6 +798,7 @@ class AgentServer:
                         if definition.approval_required:
                             self.database.save_checkpoint(run_id, {"sideEffectStarted": True})
                         result = registry.execute(name, arguments)
+                        step_progress = True
                         if definition.approval_required:
                             self.database.save_checkpoint(run_id, {"sideEffectsCompleted": True})
                         emit("tool.completed", {"toolCallId": call_id, "name": name, "approved": True, "result": result[:65536]})
@@ -777,8 +806,30 @@ class AgentServer:
                         result = f"Tool error: {exc}"
                         emit("tool.completed", {"toolCallId": call_id, "name": name, "approved": True, "error": result})
                     messages.append(ToolMessage(content=result, tool_call_id=call_id))
-                self.database.save_checkpoint(run_id, {"status": "running", "completedToolStep": _step + 1})
-            raise RuntimeError(f"Agent exceeded the {self.max_tool_steps}-step tool limit")
+                tool_step += 1
+                self.database.save_checkpoint(run_id, {
+                    "status": "running", "completedToolStep": tool_step,
+                    "toolBudget": current_limit, "maxToolBudget": self.max_total_tool_steps,
+                })
+
+                # A tool-calling response near the budget boundary is the
+                # model's signal that the task is not finished yet. Extend in
+                # small increments only after a successful tool result.
+                if tool_step >= current_limit and step_progress and current_limit < self.max_total_tool_steps:
+                    previous_limit = current_limit
+                    current_limit = min(current_limit + 12, self.max_total_tool_steps)
+                    self.database.save_checkpoint(run_id, {
+                        "status": "running", "completedToolStep": tool_step,
+                        "toolBudget": current_limit, "maxToolBudget": self.max_total_tool_steps,
+                    })
+                    emit("run.budget_extended", {
+                        "runId": run_id, "previousBudget": previous_limit,
+                        "budget": current_limit, "maxBudget": self.max_total_tool_steps,
+                    })
+            raise RuntimeError(
+                f"Agent reached the safety cap of {self.max_total_tool_steps} tool steps; "
+                "the workspace changes up to this point were preserved"
+            )
         except RunCancelled:
             self.database.set_run_status(run_id, "cancelled")
             emit("run.cancelled", {"runId": run_id, "threadId": thread_id})
@@ -809,7 +860,7 @@ class AgentServer:
         """Run a bounded read-only specialist loop; side effects remain coordinator-only."""
         registry = ToolRegistry(workspace, knowledge_search=knowledge.format_results)
         system = (
-            f"你是 WorkBee 专家 Agent {provider['name']}。职责：{provider.get('description', '')}。"
+            f"你是 WorkBee 专家 Agent {provider['name']}。职责：{provider.get('description', '')}。验收职责：{provider.get('acceptanceResponsibility', '') or '检查本角色分析是否有证据、风险和可执行结论'}。"
             f"技能：{'、'.join(provider.get('skills', [])) or '通用分析'}。"
             "独立分析当前任务，主动使用只读工具核验工作区事实。优先使用 search_knowledge 跨文件检索，"
             "必要时再读取具体文件。不得提出或执行写文件、命令、GitHub 修改等副作用操作。"

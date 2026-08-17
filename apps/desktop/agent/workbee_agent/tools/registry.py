@@ -6,6 +6,8 @@ import platform
 import shutil
 import subprocess
 import re
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -14,6 +16,10 @@ from .github_mcp import GithubMcpClient, GithubMcpError, RemoteMcpClient
 
 class ToolError(RuntimeError):
     pass
+
+
+_DEV_SERVER_PROCESSES: Dict[int, subprocess.Popen[str]] = {}
+_DEV_SERVER_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -29,8 +35,10 @@ class ToolDefinition:
 class ToolRegistry:
     def __init__(self, workspace: Path, github_token: str = "",
                  knowledge_search: Optional[Callable[[str, int], str]] = None,
-                 mcp_servers: Optional[List[Dict[str, Any]]] = None) -> None:
+                 mcp_servers: Optional[List[Dict[str, Any]]] = None,
+                 execution_mode: str = "local-dev") -> None:
         self.workspace = workspace.resolve(strict=True)
+        self.execution_mode = execution_mode if execution_mode in {"workspace-safe", "local-dev", "full-access"} else "local-dev"
         self._tools: Dict[str, ToolDefinition] = {}
         self.github_mcp_error = ""
         self._knowledge_search = knowledge_search
@@ -100,6 +108,19 @@ class ToolRegistry:
                 "timeout": {"type": "integer", "minimum": 1, "maximum": 120, "default": 30},
             }, "required": ["command"], "additionalProperties": False,
         }, "high", True, self._run_command)
+        self.register("start_dev_server", "经用户批准后，在当前工作区启动绑定到 localhost 的本地开发服务器。返回 PID 和访问地址。服务器会在后台持续运行。", {
+            "type": "object", "properties": {
+                "command": {"type": "string", "description": "可执行文件名，例如 node、python3、npm"},
+                "arguments": {"type": "array", "items": {"type": "string"}, "default": []},
+                "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+            }, "required": ["command", "port"], "additionalProperties": False,
+        }, "high", True, self._start_dev_server)
+        self.register("dev_server_status", "查看当前工作区已启动的本地开发服务器。", {
+            "type": "object", "properties": {"pid": {"type": "integer"}}, "additionalProperties": False,
+        }, "low", False, self._dev_server_status)
+        self.register("stop_dev_server", "停止当前工作区指定的本地开发服务器。", {
+            "type": "object", "properties": {"pid": {"type": "integer"}}, "required": ["pid"], "additionalProperties": False,
+        }, "high", True, self._stop_dev_server)
 
     def _register_github_mcp(self, token: str) -> None:
         """Expose the server's current tool list instead of maintaining a stale copy."""
@@ -294,6 +315,18 @@ class ToolRegistry:
         executable = shutil.which(command)
         if not executable:
             raise ToolError(f"Executable not found: {command}")
+        if self.execution_mode == "full-access":
+            env = os.environ.copy()
+            env.update({"HOME": str(self.workspace), "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"})
+            try:
+                result = subprocess.run(
+                    [executable, *args], cwd=str(self.workspace), capture_output=True, text=True,
+                    timeout=max(1, min(timeout, 120)), check=False, env=env,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise ToolError("Command timed out") from exc
+            output = (result.stdout + result.stderr).strip()[:65536]
+            return f"exit_code={result.returncode}\n{output or '(no output)'}"
         if not self._sandbox_available():
             raise ToolError("A supported OS command sandbox is not available; command execution was refused")
         profile = """
@@ -304,6 +337,8 @@ class ToolRegistry:
 (allow file-read* (subpath (param "WORKSPACE")))
 (allow file-write* (subpath (param "WORKSPACE")))
 """
+        if self.execution_mode == "local-dev":
+            profile += '(allow network-bind (local tcp "localhost:*"))\n(allow network-inbound (local tcp "localhost:*"))\n'
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/sbin:/sbin"),
             "HOME": str(self.workspace), "TMPDIR": str(self.workspace), "LANG": "C.UTF-8",
@@ -319,3 +354,73 @@ class ToolRegistry:
             raise ToolError("Sandboxed command timed out") from exc
         output = (result.stdout + result.stderr).strip()[:65536]
         return f"exit_code={result.returncode}\n{output or '(no output)'}"
+
+    def _start_dev_server(self, arguments: Dict[str, Any]) -> str:
+        if self.execution_mode == "workspace-safe":
+            raise ToolError("当前为工作区安全模式；请切换到“本地开发”模式后再启动服务器")
+        command = str(arguments.get("command", "")).strip()
+        args = arguments.get("arguments", [])
+        port = int(arguments.get("port", 0))
+        allowed_commands = {"node", "nodejs", "npm", "pnpm", "yarn", "bun", "python", "python3", "deno"}
+        if command not in allowed_commands:
+            raise ToolError("开发服务器只允许使用 node、npm、pnpm、yarn、bun、python 或 deno")
+        if not isinstance(args, list) or len(args) > 100 or any(not isinstance(item, str) or len(item) > 4096 for item in args):
+            raise ToolError("Command arguments are invalid")
+        if not 1 <= port <= 65535:
+            raise ToolError("Port must be between 1 and 65535")
+        executable = shutil.which(command)
+        if not executable:
+            raise ToolError(f"Executable not found: {command}")
+        with _DEV_SERVER_LOCK:
+            for pid, process in list(_DEV_SERVER_PROCESSES.items()):
+                if process.poll() is not None:
+                    _DEV_SERVER_PROCESSES.pop(pid, None)
+            runtime_dir = self.workspace / ".workbee-runtime"
+            runtime_dir.mkdir(exist_ok=True)
+            log_path = runtime_dir / f"dev-server-{port}.log"
+            log_file = log_path.open("a", encoding="utf-8")
+            env = os.environ.copy()
+            env.update({"HOST": "127.0.0.1", "HOSTNAME": "127.0.0.1", "PORT": str(port)})
+            try:
+                process = subprocess.Popen(
+                    [executable, *args], cwd=str(self.workspace), env=env,
+                    stdin=subprocess.DEVNULL, stdout=log_file, stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            except OSError as exc:
+                log_file.close()
+                raise ToolError(f"Failed to start development server: {exc}") from exc
+            log_file.close()
+            _DEV_SERVER_PROCESSES[process.pid] = process
+        time.sleep(0.25)
+        if process.poll() is not None:
+            raise ToolError(f"Development server exited immediately; see .workbee-runtime/{log_path.name}")
+        return f"Development server started: http://127.0.0.1:{port} (pid={process.pid}, log=.workbee-runtime/{log_path.name})"
+
+    def _dev_server_status(self, arguments: Dict[str, Any]) -> str:
+        requested_pid = arguments.get("pid")
+        with _DEV_SERVER_LOCK:
+            entries = []
+            for pid, process in list(_DEV_SERVER_PROCESSES.items()):
+                status = process.poll()
+                if status is not None:
+                    _DEV_SERVER_PROCESSES.pop(pid, None)
+                    continue
+                if requested_pid is None or int(requested_pid) == pid:
+                    entries.append(f"pid={pid} running")
+        return "\n".join(entries) or "No running development servers"
+
+    def _stop_dev_server(self, arguments: Dict[str, Any]) -> str:
+        pid = int(arguments.get("pid", 0))
+        with _DEV_SERVER_LOCK:
+            process = _DEV_SERVER_PROCESSES.get(pid)
+            if process is None:
+                raise ToolError(f"Unknown development server pid: {pid}")
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+            _DEV_SERVER_PROCESSES.pop(pid, None)
+        return f"Development server stopped: pid={pid}"

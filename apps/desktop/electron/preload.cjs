@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('workbeeDesktop', {
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
+    setExecutionMode: mode => ipcRenderer.invoke('settings:set-execution-mode', mode),
     selectWorkspaceDir: () => ipcRenderer.invoke('settings:select-workspace-dir'),
     resetWorkspaceDir: () => ipcRenderer.invoke('settings:reset-workspace-dir'),
     reset: () => ipcRenderer.invoke('settings:reset'),

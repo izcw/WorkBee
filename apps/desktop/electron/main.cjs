@@ -154,6 +154,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
     getGithubMcpToken: () => secureStore.getApiKey('github-mcp-token'),
     getEmbeddingProvider: () => modelStore.embeddingProvider(),
     getMcpServers: () => mcpStore.forAgent(),
+    getExecutionMode: async () => (await settingsStore.get()).executionMode,
   });
   agentManager.on('event', message => sendToRenderers('agent:event', message));
   agentManager.on('status', status => sendToRenderers('agent:status', status));
@@ -205,7 +206,13 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   });
   ipcMain.handle('settings:get', async () => {
     const settings = await settingsStore.get();
-    return { workspaceDir: settings.workspaceDir, defaultWorkspaceDir: path.join(app.getPath('userData'), 'projects') };
+    return { workspaceDir: settings.workspaceDir, defaultWorkspaceDir: path.join(app.getPath('userData'), 'projects'), executionMode: settings.executionMode };
+  });
+  ipcMain.handle('settings:set-execution-mode', async (_event, mode) => {
+    if (!['workspace-safe', 'local-dev', 'full-access'].includes(mode)) throw new Error('执行权限模式无效');
+    const saved = await settingsStore.set({ executionMode: mode });
+    await agentManager.restart();
+    return { executionMode: saved.executionMode };
   });
   ipcMain.handle('settings:select-workspace-dir', async event => {
     const window = BrowserWindow.fromWebContents(event.sender);

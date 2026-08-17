@@ -18,6 +18,7 @@ function TeamSidebar() {
   const [avatar, setAvatar] = useState('default:1');
   const [modelId, setModelId] = useState('');
   const [description, setDescription] = useState('');
+  const [acceptanceResponsibility, setAcceptanceResponsibility] = useState('');
   const [skills, setSkills] = useState<string[]>([]);
   const [knowledge, setKnowledge] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -27,12 +28,12 @@ function TeamSidebar() {
   useEffect(() => {
     setEditing(creating);
     setName(role?.name || ''); setRoleTitle(role?.role || ''); setAvatar(roleAvatarValue(role)); setModelId(role?.modelId || chatModels[0]?.id || '');
-    setDescription(role?.description || ''); setSkills(role?.skills || []); setKnowledge(role?.knowledge || []); setError(''); setReferencePicker(null);
+    setDescription(role?.description || ''); setAcceptanceResponsibility(role?.acceptanceResponsibility || ''); setSkills(role?.skills || []); setKnowledge(role?.knowledge || []); setError(''); setReferencePicker(null);
   }, [creating, role?.id, models]);
   const save = async () => {
     setSaving(true); setError('');
     const automaticSkills = knowledge.flatMap(reference => { const document = KNOWLEDGE_DOCUMENTS.find(item => item.id === reference || item.name === reference); return document ? [FORMAT_SKILL_BY_TYPE[document.type]] : []; });
-    try { await saveRole({ id: role?.id, name, role: roleTitle, avatar, modelId, description, skills: Array.from(new Set([...skills, ...automaticSkills])), knowledge }); setEditing(false); }
+    try { await saveRole({ id: role?.id, name, role: roleTitle, avatar, modelId, description, acceptanceResponsibility, skills: Array.from(new Set([...skills, ...automaticSkills])), knowledge }); setEditing(false); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
@@ -58,6 +59,7 @@ function TeamSidebar() {
     {editing && <section className="role-identity-fields"><h3>基本信息</h3><input value={name} onChange={event => setName(event.target.value)} placeholder="角色名称"/><input value={roleTitle} onChange={event => setRoleTitle(event.target.value)} placeholder="角色职责，如：前端开发"/></section>}
     {editing && <section><h3>头像</h3><div className="avatar-picker">{DEFAULT_ROLE_AVATARS.map((image, index) => { const value = `default:${index + 1}`; return <button key={value} className={avatar === value ? 'active' : ''} onClick={() => setAvatar(value)}><img src={image} alt="默认头像"/></button>; })}<button className="avatar-upload" onClick={() => uploadRef.current?.click()}><Upload size={16}/><span>上传</span></button></div><input ref={uploadRef} className="hidden-file" type="file" accept="image/*" onChange={event => uploadAvatar(event.target.files?.[0])}/></section>}
     <section><h3>角色描述</h3>{editing ? <textarea value={description} onChange={event => setDescription(event.target.value)}/> : <p>{role?.description || '暂无描述'}</p>}</section>
+    <section><h3>验收职责</h3>{editing ? <textarea value={acceptanceResponsibility} onChange={event => setAcceptanceResponsibility(event.target.value)} placeholder="填写该角色负责检查什么、以什么标准确认交付完成"/> : <p>{role?.acceptanceResponsibility || '暂无验收职责'}</p>}</section>
     <section><h3>模型</h3>{editing ? <select value={modelId} onChange={event => setModelId(event.target.value)}>{chatModels.map(item => <option key={item.id} value={item.id}>{item.name} · {item.model}</option>)}</select> : <div className="role-model-summary"><span>{role?.modelName}</span><small>{role?.model}</small></div>}</section>
     <section><div className="reference-section-heading"><h3>技能引用</h3>{editing && <button onClick={() => setReferencePicker('skills')}><Plus size={13}/>选择技能</button>}</div><div className="detail-tags editable-tags">{skills.length ? skills.map(item => <span key={item}><Check size={11}/>{item}{editing && <button aria-label={`移除 ${item}`} onClick={() => setSkills(values => values.filter(value => value !== item))}><X size={11}/></button>}</span>) : <p>暂无技能</p>}</div></section>
     <section><div className="reference-section-heading"><h3>知识库引用</h3>{editing && <button onClick={() => setReferencePicker('knowledge')}><Plus size={13}/>选择文档</button>}</div><div className="knowledge-list editable-tags">{knowledge.length ? knowledge.map(reference => { const item = KNOWLEDGE_DOCUMENTS.find(document => document.id === reference || document.name === reference); return <span key={reference}>{item?.name || reference}{editing && <button aria-label={`移除 ${item?.name || reference}`} onClick={() => setKnowledge(values => values.filter(value => value !== reference))}><X size={11}/></button>}</span>; }) : <p>暂无引用</p>}</div></section>
